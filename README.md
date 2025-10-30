@@ -1,216 +1,249 @@
 -----
 
-# MARUK (Monitoring, Attack, and Regulation Utility for Kilobits)
+# Proyek MARUK (Monitoring, Attack, and Regulation Utility)
 
-**Laporan Praktikum 1 Infrastruktur Jaringan Komputer - Kelompok 11**
+**MARUK** adalah sebuah platform edukasi keamanan siber yang terintegrasi. Proyek ini menyediakan lingkungan laboratorium virtual yang aman dan terkontrol bagi mahasiswa dan praktisi TI untuk mensimulasikan, memantau, dan memitigasi serangan jaringan berbasis volume (DDoS) secara *real-time*.
 
-MARUK adalah platform edukasi terintegrasi yang dirancang untuk menjembatani kesenjangan antara teori dan praktik keamanan siber[cite: 245]. Platform ini menyediakan lingkungan laboratorium virtual yang aman [cite: 242] bagi mahasiswa untuk mensimulasikan serangan jaringan (DDoS & *bandwidth hogging*), memantau dampaknya secara *real-time* melalui *dashboard* visual, dan menerapkan teknik mitigasi (seperti *firewall*) untuk memulihkan stabilitas jaringan[cite: 243, 244].
+Proyek ini menjembatani kesenjangan antara teori keamanan jaringan dan keterampilan praktis dengan menggabungkan tiga pilar utama ke dalam satu utilitas terpadu.
 
-### 👥 Anggota Kelompok 11
+## 🚀 Fitur Utama
 
-  * **Arif Rahman** (`1519624018`) - Project Lead & Backend Developer [cite: 312]
-  * **Achtaroyan Rakabillah** (`1519624042`) - Frontend Developer [cite: 312]
-  * **Jeremy Partahi Oloan Sianipar** (`1519624027`) - QA & Documentation Specialist [cite: 313]
+1.  **Attack (Simulasi Serangan)**: Mesin serangan berbasis **Scapy** yang mampu menghasilkan lalu lintas serangan DDoS (seperti ICMP/UDP/TCP Flood) dengan teknik IP Spoofing untuk mensimulasikan serangan terdistribusi.
+2.  **Monitor (Pemantauan Real-time)**: *Dashboard* terpusat berbasis **Flask** dan **Chart.js** yang memantau metrik kinerja jaringan (Latency, Throughput, Packet Loss) dari target secara *real-time*.
+3.  **Regulation (Mitigasi Serangan)**: Agen mitigasi berbasis **Flask** & **python-iptables** yang dapat dikontrol dari jarak jauh. Agen ini dapat secara dinamis menerapkan atau mencabut aturan *firewall* (`iptables`) di VM Target untuk memblokir serangan.
 
------
+## 🛠️ Tumpukan Teknologi (Tech Stack)
 
-## 🏛️ Arsitektur Proyek
+  * **Backend & Skrip**: Python 3.11+
+  * **API & Web Server**: Flask
+  * **Simulasi Serangan**: Scapy
+  * **Monitoring Metrik**: `icmplib`, `iperf3`
+  * **Mitigasi Firewall**: `python-iptables`
+  * **Visualisasi Frontend**: Chart.js, HTML/CSS/JavaScript
+  * **Lingkungan Virtualisasi**: Oracle VirtualBox
+  * **Sistem Operasi VM**: Debian 13 (Trixie) / Ubuntu Server
 
-Proyek ini berjalan dalam lingkungan lab virtual yang terdiri dari **4 Virtual Machine (VM)** [cite: 324] yang saling terhubung:
+## ⚙️ Panduan Setup Lingkungan
 
-1.  🧠 **VM Monitoring (Controller):** Menjalankan server API utama (`app.py`) yang mengumpulkan metrik dan bertindak sebagai "otak" yang dapat memicu mitigasi. Ini juga akan menjadi *host* untuk *dashboard* frontend.
-2.  🛡️ **VM Target (Victim):** Mesin yang menjadi sasaran serangan. Mesin ini menjalankan agen mitigasi (`mitigation_agent.py`) untuk mengaktifkan *firewall* saat diperintah.
-3.  💥 **VM Penyerang (Attacker):** Mesin yang menjalankan skrip serangan `test_attack.py` (menggunakan Scapy) [cite: 341] untuk menghasilkan lalu lintas DDoS.
-4.  👤 **VM Real User (Opsional):** Mesin yang bertindak sebagai pengguna biasa (menjalankan `ping` atau `curl`) untuk mendemonstrasikan dampak serangan terhadap pengguna yang sah.
+Panduan ini akan memandu Anda untuk menyiapkan seluruh topologi lab MARUK.
 
------
+### Bagian 1: Prasyarat
 
-## 🚀 Setup Proyek (Getting Started)
+1.  **Oracle VirtualBox**: Pastikan Anda telah menginstal versi terbaru.
+2.  **`.iso` OS**: Siapkan file `.iso` Debian 13 (atau Ubuntu Server).
+3.  **Git**: Terinstal di mesin host Anda.
 
-Panduan ini akan memandu Anda untuk men-setup keseluruhan lingkungan MARUK di PC Anda.
+### Bagian 2: Setup Jaringan VirtualBox
 
-### 1\. Prasyarat Sistem
+Kita perlu membuat jaringan virtual agar semua VM kita dapat saling berkomunikasi.
 
-  * **VirtualBox** (atau *hypervisor* lain) [cite: 323]
-  * **Git** [cite: 336]
-  * File `.iso` **Debian 13** (atau distro Linux server lain) [cite: 332]
-  * Akses terminal / SSH client (seperti PowerShell, Windows Terminal, atau PuTTY)
+1.  Buka VirtualBox.
+2.  Pergi ke **File \> Tools \> Network Manager**.
+3.  Pilih tab **NAT Networks**.
+4.  Klik **Create**. Sebuah jaringan baru bernama `NatNetwork` akan muncul.
+5.  Pastikan `NatNetwork` ini memiliki **DHCP Server Enabled**.
 
-### 2\. Langkah 1: Setup Lingkungan Lab (VirtualBox)
+### Bagian 3: Setup VM (Lakukan untuk SEMUA VM)
 
-Setiap anggota tim harus melakukan ini di PC masing-masing.
+Buat VM dasar pertama Anda (misal, bernama "Debian-Template") dengan spesifikasi berikut:
 
-1.  **Buat 4 VM**: Buat empat VM baru (Monitoring, Target, Penyerang, Real User) menggunakan VirtualBox.
-      * **RAM**: Berikan **2 GB** RAM untuk setiap VM (rekomendasi).
-      * **OS**: Instal Debian 13 (Netinstall, **tanpa Desktop Environment**).
-2.  **Konfigurasi Jaringan (PENTING)**:
-      * Pastikan semua VM dalam keadaan **mati**.
-      * Untuk **setiap VM**, buka **Settings \> Network**.
-      * Ubah **Attached to:** menjadi **`Bridged Adapter`**.
-      * Di bawah **Name**, pilih kartu jaringan utama PC Anda (misal: `wlp...` untuk Wi-Fi atau `enp...` untuk Ethernet).
-      * Ini akan membuat semua VM Anda mendapatkan IP (seperti `192.168.x.x`) dari router utama Anda, sehingga mereka bisa saling berkomunikasi.
-3.  **Setup Awal di *Setiap* VM**:
-      * Nyalakan semua VM dan login melalui konsol VirtualBox.
-      * **Instal `sudo`**:
-        ```bash
-        su -
-        apt update && apt install sudo
-        usermod -aG sudo <username_anda>
-        exit # Logout
-        ```
-      * **Login kembali** dan pastikan `sudo` berfungsi.
-      * **Instal SSH Server & Git**:
-        ```bash
-        sudo apt update
-        sudo apt install openssh-server git -y
-        ```
-      * **Cari IP Anda**: Catat IP address setiap VM dengan `ip a`.
-4.  **Clone Repositori**:
-      * Di **SEMUA EMPAT** VM, *clone* repositori ini:
-        ```bash
-        git clone <URL_GitHub_Proyek_Anda>
-        cd MARUK
-        ```
+  * **RAM**: 2GB
+  * **Penyimpanan**: 10GB (Dinamis)
+  * **Network**: Set ke **NAT Network** (gunakan `NatNetwork` yang baru saja Anda buat).
+  * **Instalasi OS**: Lakukan instalasi minimal Debian 13. **JANGAN** instal Desktop Environment (DE).
+  * **User**: Buat pengguna non-root (misal, `vboxuser`).
 
-### 3\. Langkah 2: Setup Masing-Masing VM (Dependencies)
+Setelah VM terinstal, **buat 3 klon** dari VM template ini dan beri nama:
 
-Sekarang, kita akan menginstal paket khusus untuk peran setiap VM.
+1.  `MonitorVM` (Controller / Otak)
+2.  `TargetVM` (Victim / Perisai)
+3.  `AttackerVM` (Penyerang / Tombak)
 
-#### 🧠 VM Monitoring (Controller)
+### Bagian 4: Konfigurasi Awal Tiap VM
 
-*Tugas: Menjalankan `app.py`*
+Nyalakan **setiap VM** dan lakukan konfigurasi dasar berikut di dalamnya.
 
-```bash
-# Instal paket sistem yang dibutuhkan
-sudo apt install python3-venv iperf3 -y
+1.  **Instal `sudo` dan `git`**:
 
-# Masuk ke folder backend
-cd ~/MARUK/backend
+    ```bash
+    su -
+    apt update
+    apt install sudo git -y
+    usermod -aG sudo <nama_user_anda>
+    exit
+    ```
 
-# Buat & aktifkan virtual environment
-python3 -m venv venv
-source venv/bin/activate
+    (Logout dan login kembali agar `sudo` aktif).
 
-# Instal library Python
-pip install Flask icmplib iperf3 requests
+2.  **Instal Paket Dasar Python**:
 
-# Simpan dependensi (opsional, tapi bagus)
-pip freeze > requirements.txt
+    ```bash
+    sudo apt update
+    sudo apt install python3 python3-pip python3-venv -y
+    ```
 
-# KONFIGURASI PENTING:
-# Edit file app.py
-nano app.py
+3.  **Clone Repositori Proyek**:
 
-# Pastikan variabel ini benar:
-# TARGET_IP = "<IP_VM_Target_Anda>"
-# MITIGATION_AGENT_URL = "http://<IP_VM_Target_Anda>:5001"
-#
-# Dan pastikan fungsi ping() menggunakan privileged=False:
-# host = ping(..., privileged=False)
-```
+    ```bash
+    git clone <URL_REPO_GITHUB_ANDA>
+    cd MARUK
+    ```
 
-#### 🛡️ VM Target (Victim)
+### Bagian 5: Setup Spesifik per VM
 
-*Tugas: Menjalankan `mitigation_agent.py` dan server `iperf3`*
+Masuk ke folder `MARUK/backend` di setiap VM dan jalankan setup spesifik di bawah ini.
+
+#### 1\. 🖥️ Di `TargetVM` (Victim / Perisai)
+
+Mesin ini perlu menjalankan agen mitigasi dan server `iperf3`.
 
 ```bash
-# Instal paket sistem yang dibutuhkan (ini krusial!)
-sudo apt install python3-venv iperf3 build-essential python3-dev iptables -y
+cd MARUK/backend
 
-# Set iperf3 untuk berjalan sebagai server (daemon)
-# Saat instalasi, akan muncul pop-up. Pilih <Yes>
+# Instal dependensi kompilasi & firewall
+sudo apt update
+sudo apt install build-essential python3-dev iperf3 iptables -y
 
-# Masuk ke folder backend
-cd ~/MARUK/backend
-
-# Buat & aktifkan virtual environment
+# Buat venv dan instal paket Python
 python3 -m venv venv
 source venv/bin/activate
-
-# Instal library Python (ini akan dikompilasi)
 pip install Flask python-iptables
+
+# Jalankan iperf3 sebagai server
+# Saat ditanya "Start Iperf3 as a daemon automatically?", pilih <Yes>
 ```
 
-#### 💥 VM Penyerang (Attacker)
+#### 2\. 📊 Di `MonitorVM` (Controller / Otak)
 
-*Tugas: Menjalankan `test_attack.py`*
+Mesin ini perlu menjalankan API monitoring utama.
 
 ```bash
-# Instal paket sistem
-sudo apt install python3-venv -y
+cd MARUK/backend
 
-# Masuk ke folder backend
-cd ~/MARUK/backend
+# Instal dependensi (iperf3 dibutuhkan untuk library-nya)
+sudo apt update
+sudo apt install iperf3 -y
+# Saat ditanya "Start Iperf3 as a daemon automatically?", pilih <No>
 
-# Buat & aktifkan virtual environment
+# Buat venv dan instal paket Python
 python3 -m venv venv
 source venv/bin/activate
+pip install Flask icmplib iperf3 requests
+```
 
-# Instal Scapy
+#### 3\. 💣 Di `AttackerVM` (Penyerang / Tombak)
+
+Mesin ini hanya perlu `scapy`.
+
+```bash
+cd MARUK/backend
+
+# Buat venv dan instal paket Python
+python3 -m venv venv
+source venv/bin/activate
 pip install scapy
 ```
 
-#### 👤 VM Real User
+-----
 
-*Tugas: Menjalankan `ping` atau `curl`*
+## 🚀 Menjalankan Proyek (Alur Demo)
 
-  * Tidak perlu setup khusus. Cukup pastikan `ping` dan `curl` terinstal (`sudo apt install curl inetutils-ping`).
+### Langkah 1: Dapatkan IP Address
+
+Nyalakan semua VM Anda. Login ke setiap VM dan jalankan `ip a` untuk menemukan IP address mereka (misal, `10.0.2.x`).
+
+**PENTING**: Catat IP dari `MonitorVM` dan `TargetVM`.
+
+### Langkah 2: Edit File Konfigurasi
+
+Di `MonitorVM`, edit file `MARUK/backend/app.py`:
+
+```bash
+nano MARUK/backend/app.py
+```
+
+Ubah variabel `TARGET_IP` dan `MITIGATION_AGENT_URL` dengan IP address `TargetVM` Anda yang sebenarnya.
+
+### Langkah 3: Jalankan Semua Server Backend
+
+Buka 3 terminal SSH terpisah dari Host Anda untuk menjalankan semua layanan.
+
+1.  **Di Terminal 1 (SSH ke `TargetVM`)**:
+    Jalankan Agen Mitigasi.
+
+    ```bash
+    cd MARUK/backend
+    source venv/bin/activate
+
+    # Temukan path xtables (wajib)
+    export XT_PATH=$(sudo find / -name xtables 2>/dev/null)
+
+    # Jalankan agen dengan sudo dan path xtables
+    sudo XTABLES_LIBDIR="$XT_PATH" venv/bin/python mitigation_agent.py
+    ```
+
+    *(Server ini akan berjalan di port `5001`)*
+
+2.  **Di Terminal 2 (SSH ke `MonitorVM`)**:
+    Jalankan Server Monitoring Utama.
+
+    ```bash
+    cd MARUK/backend
+    source venv/bin/activate
+    python3 app.py
+    ```
+
+    *(Server ini akan berjalan di port `5000`)*
+
+3.  **Di Terminal 3 (Opsional - untuk verifikasi)**:
+    Buka SSH ke `TargetVM` lagi dan jalankan `tcpdump` untuk melihat serangan.
+
+    ```bash
+    sudo tcpdump -n icmp
+    ```
+
+### Langkah 4: Jalankan Frontend (Dashboard)
+
+1.  Di komputer **Host** Anda, buka folder `frontend`.
+2.  Buka file `index.html` di browser Anda.
+3.  (Jika perlu) Edit `frontend/script.js` untuk memastikan URL API mengarah ke `http://<IP_MonitorVM>:5000`.
+
+### Langkah 5: Skenario Demo
+
+1.  **Lihat Dashboard**: Perhatikan metrik (Latency, Throughput) dalam keadaan normal.
+2.  **Mulai Serangan**:
+      * Buka terminal SSH ke `AttackerVM`.
+      * `cd MARUK/backend`
+      * `source venv/bin/activate`
+      * `sudo venv/bin/python test_attack.py` (Ganti IP target di dalam skrip jika perlu)
+3.  **Lihat Dampak**: Perhatikan *dashboard*. Latency akan melonjak dan Throughput akan anjlok. `tcpdump` akan dipenuhi paket.
+4.  **Aktifkan Mitigasi**:
+      * Klik tombol "Start Mitigation" di *dashboard* (atau jalankan `curl http://<IP_MonitorVM>:5000/api/mitigate/start`).
+5.  **Lihat Pemulihan**:
+      * Metrik di *dashboard* akan kembali normal.
+      * `tcpdump` akan menunjukkan paket *request* masih masuk, tetapi paket *reply* berhenti (tanda *firewall* `DROP` berhasil).
+6.  **Hentikan Mitigasi**:
+      * Klik tombol "Stop Mitigation" (atau jalankan `curl http://<IP_MonitorVM>:5000/api/mitigate/stop`).
+      * Metrik akan kembali kacau, membuktikan serangan masih berjalan.
 
 -----
 
-## 🏁 Cara Menjalankan Simulasi Penuh
+## 🚨 Troubleshooting Umum
 
-Setelah semua setup selesai, ikuti urutan ini untuk menjalankan demo:
+  * **SSH `timeout` atau `connection refused`**:
 
-1.  **Di VM Target (Victim)**:
+    1.  Pastikan semua VM ada di `NAT Network` yang sama.
+    2.  Pastikan layanan `ssh` berjalan (`sudo systemctl status ssh`).
+    3.  Periksa aturan Port Forwarding jika Anda menggunakan mode `NAT` standar.
 
-      * Pastikan server `iperf3` berjalan (jika tidak memilih `<Yes>` saat instal, jalankan `iperf3 -s &`).
-      * Jalankan Agen Mitigasi. **Path `XTABLES_LIBDIR` ini WAJIB**:
-        ```bash
-        cd ~/MARUK/backend
-        source venv/bin/activate
-        sudo XTABLES_LIBDIR="/usr/lib/x86_64-linux-gnu/xtables" venv/bin/python mitigation_agent.py
-        ```
+  * **VM Mendapat IP `169.254.x.x`**:
 
-2.  **Di VM Monitoring (Controller)**:
+      * VM Anda gagal mendapatkan IP dari DHCP. Jalankan `sudo reboot` di dalam VM tersebut. Jika masih gagal, periksa pengaturan `NAT Network` Anda di VirtualBox.
 
-      * Jalankan API Server Utama:
-        ```bash
-        cd ~/MARUK/backend
-        source venv/bin/activate
-        python3 app.py
-        ```
+  * **Error `setcap` atau `privileged` saat `ping`**:
 
-3.  **Di VM Real User**:
+      * File `app.py` sudah diatur untuk menggunakan `privileged=False` pada `icmplib`, yang menghindari masalah ini.
 
-      * Mulai ping berkelanjutan untuk melihat dampak:
-        ```bash
-        ping <IP_VM_TARGET>
-        ```
+  * **Error `XTABLES_LIBDIR`**:
 
-4.  **Di PC Host Anda (Akses Frontend)**:
-
-      * Buka browser dan arahkan ke *dashboard* yang dibuat oleh tim Frontend.
-      * *Dashboard* akan memanggil `http://<IP_VM_MONITOR>:5000/api/metrics` dan menampilkan grafik.
-
-5.  **Di VM Penyerang (Attacker)**:
-
-      * Mulai serangan\!
-        ```bash
-        cd ~/MARUK/backend
-        source venv/bin/activate
-        sudo venv/bin/python test_attack.py
-        ```
-      * **Amati**: Lihat *dashboard* dan terminal `ping` di VM Real User. Metrik akan anjlok.
-
-6.  **Di PC Host Anda (Tindakan Mitigasi)**:
-
-      * Picu mitigasi *firewall* dengan memanggil API di VM Monitoring:
-        ```bash
-        curl http://<IP_VM_MONITOR>:5000/api/mitigate/start
-        ```
-      * **Amati**: Metrik di *dashboard* akan pulih, dan `ping` akan gagal (karena kita memblokir ICMP).
-      * Untuk menghentikan mitigasi:
-        ```bash
-        curl http://<IP_VM_MONITOR>:5000/api/mitigate/stop
-        ```
+      * Pastikan Anda menjalankan `mitigation_agent.py` menggunakan perintah `sudo XTABLES_LIBDIR="..." ...` seperti di atas.
