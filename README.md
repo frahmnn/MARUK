@@ -4,23 +4,23 @@
 
 **Laporan Praktikum 1 Infrastruktur Jaringan Komputer - Kelompok 11**
 
-[cite\_start]MARUK adalah platform edukasi terintegrasi yang dirancang untuk menjembatani kesenjangan antara teori dan praktik keamanan siber[cite: 245]. [cite\_start]Platform ini menyediakan lingkungan laboratorium virtual yang aman [cite: 242] [cite\_start]bagi mahasiswa untuk mensimulasikan serangan jaringan (DDoS & *bandwidth hogging*), memantau dampaknya secara *real-time* melalui *dashboard* visual, dan menerapkan teknik mitigasi (seperti *firewall*) untuk memulihkan stabilitas jaringan[cite: 243, 244].
+MARUK adalah platform edukasi terintegrasi yang dirancang untuk menjembatani kesenjangan antara teori dan praktik keamanan siber[cite: 245]. Platform ini menyediakan lingkungan laboratorium virtual yang aman [cite: 242] bagi mahasiswa untuk mensimulasikan serangan jaringan (DDoS & *bandwidth hogging*), memantau dampaknya secara *real-time* melalui *dashboard* visual, dan menerapkan teknik mitigasi (seperti *firewall*) untuk memulihkan stabilitas jaringan[cite: 243, 244].
 
 ### 👥 Anggota Kelompok 11
 
-  * [cite\_start]**Arif Rahman** (`1519624018`) - Project Lead & Backend Developer [cite: 312]
-  * [cite\_start]**Achtaroyan Rakabillah** (`1519624042`) - Frontend Developer [cite: 312]
-  * [cite\_start]**Jeremy Partahi Oloan Sianipar** (`1519624027`) - QA & Documentation Specialist [cite: 313]
+  * **Arif Rahman** (`1519624018`) - Project Lead & Backend Developer [cite: 312]
+  * **Achtaroyan Rakabillah** (`1519624042`) - Frontend Developer [cite: 312]
+  * **Jeremy Partahi Oloan Sianipar** (`1519624027`) - QA & Documentation Specialist [cite: 313]
 
 -----
 
 ## 🏛️ Arsitektur Proyek
 
-[cite\_start]Proyek ini berjalan dalam lingkungan lab virtual yang terdiri dari **4 Virtual Machine (VM)** [cite: 324] yang saling terhubung:
+Proyek ini berjalan dalam lingkungan lab virtual yang terdiri dari **4 Virtual Machine (VM)** [cite: 324] yang saling terhubung:
 
 1.  🧠 **VM Monitoring (Controller):** Menjalankan server API utama (`app.py`) yang mengumpulkan metrik dan bertindak sebagai "otak" yang dapat memicu mitigasi. Ini juga akan menjadi *host* untuk *dashboard* frontend.
 2.  🛡️ **VM Target (Victim):** Mesin yang menjadi sasaran serangan. Mesin ini menjalankan agen mitigasi (`mitigation_agent.py`) untuk mengaktifkan *firewall* saat diperintah.
-3.  [cite\_start]💥 **VM Penyerang (Attacker):** Mesin yang menjalankan skrip serangan `test_attack.py` (menggunakan Scapy) [cite: 341] untuk menghasilkan lalu lintas DDoS.
+3.  💥 **VM Penyerang (Attacker):** Mesin yang menjalankan skrip serangan `test_attack.py` (menggunakan Scapy) [cite: 341] untuk menghasilkan lalu lintas DDoS.
 4.  👤 **VM Real User (Opsional):** Mesin yang bertindak sebagai pengguna biasa (menjalankan `ping` atau `curl`) untuk mendemonstrasikan dampak serangan terhadap pengguna yang sah.
 
 -----
@@ -31,9 +31,9 @@ Panduan ini akan memandu Anda untuk men-setup keseluruhan lingkungan MARUK di PC
 
 ### 1\. Prasyarat Sistem
 
-  * [cite\_start]**VirtualBox** (atau *hypervisor* lain) [cite: 323]
-  * [cite\_start]**Git** [cite: 336]
-  * [cite\_start]File `.iso` **Debian 13** (atau distro Linux server lain) [cite: 332]
+  * **VirtualBox** (atau *hypervisor* lain) [cite: 323]
+  * **Git** [cite: 336]
+  * File `.iso` **Debian 13** (atau distro Linux server lain) [cite: 332]
   * Akses terminal / SSH client (seperti PowerShell, Windows Terminal, atau PuTTY)
 
 ### 2\. Langkah 1: Setup Lingkungan Lab (VirtualBox)
