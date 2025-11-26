@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from icmplib import ping
 import iperf3
 import time
@@ -8,11 +8,11 @@ app = Flask(__name__)
 
 # --- KONFIGURASI ---
 # Ganti dengan IP VM Target Anda
-TARGET_IP = "192.168.0.134"
+TARGET_IP = "192.168.0.109"
 # ---------------------
 
 # Ganti dengan URL agen mitigasi di VM Target
-MITIGATION_AGENT_URL = "http://192.168.0.123:5001"
+MITIGATION_AGENT_URL = "http://192.168.0.109:5001"
 # ---------------------
 
 def measure_latency_packet_loss():
@@ -55,6 +55,10 @@ def measure_throughput():
         return {
             "throughput_mbps": -1 # -1 menandakan error
         }
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 @app.route('/api/metrics')
 def get_metrics():
