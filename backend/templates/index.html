@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARUK Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>MARUK Monitoring Dashboard</h1>
+        
+        <div class="controls">
+            <h3>Status Mitigasi: <span id="mitigation-status">Non-Aktif</span></h3>
+            <button id="btn-start" onclick="toggleMitigation('start')">Aktifkan Mitigasi</button>
+            <button id="btn-stop" onclick="toggleMitigation('stop')" disabled>Matikan Mitigasi</button>
+        </div>
+
+        <div class="charts-wrapper">
+            <div class="chart-container">
+                <canvas id="trafficChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
