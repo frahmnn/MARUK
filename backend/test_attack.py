@@ -2,7 +2,7 @@ from scapy.all import IP, ICMP, send, RandIP
 import time
 
 # Ganti dengan IP VM Target Anda
-target_ip = "192.168.0.109" 
+target_ip = "192.168.0.111" 
 
 print(f"--- Memulai PoC Serangan DDoS (IP Spoofing) ke {target_ip} ---")
 

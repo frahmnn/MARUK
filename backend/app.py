@@ -8,11 +8,11 @@ app = Flask(__name__)
 
 # --- KONFIGURASI ---
 # Ganti dengan IP VM Target Anda
-TARGET_IP = "192.168.0.109"
+TARGET_IP = "192.168.0.111"
 # ---------------------
 
 # Ganti dengan URL agen mitigasi di VM Target
-MITIGATION_AGENT_URL = "http://192.168.0.109:5001"
+MITIGATION_AGENT_URL = "http://192.168.0.111:5001"
 # ---------------------
 
 def measure_latency_packet_loss():
