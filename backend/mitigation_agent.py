@@ -151,8 +151,9 @@ def unblock_udp():
         chain = get_chain()
         rule_deleted = False
 
+        # Remove all UDP rules (both ACCEPT with limit and DROP)
         for rule in chain.rules[:]:
-            if rule.protocol == "udp" and rule.target.name == "DROP":
+            if rule.protocol == "udp":
                 chain.delete_rule(rule)
                 rule_deleted = True
 
