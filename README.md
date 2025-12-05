@@ -8,15 +8,15 @@ Proyek ini menjembatani kesenjangan antara teori keamanan jaringan dan keterampi
 
 ## 🚀 Fitur Utama
 
-1.  **Attack (Simulasi Serangan)**: Mesin serangan berbasis **Scapy** yang mampu menghasilkan lalu lintas serangan DDoS (seperti ICMP/UDP/TCP Flood) dengan teknik IP Spoofing untuk mensimulasikan serangan terdistribusi.
+1.  **Attack (Simulasi Serangan)**: Mesin serangan berbasis **hping3** yang mampu menghasilkan lalu lintas serangan DDoS (seperti ICMP/UDP/TCP Flood) dengan teknik IP Spoofing untuk mensimulasikan serangan terdistribusi realistis dengan performa tinggi.
 2.  **Monitor (Pemantauan Real-time)**: *Dashboard* terpusat berbasis **Flask** dan **Chart.js** yang memantau metrik kinerja jaringan (Latency, Throughput, Packet Loss) dari target secara *real-time*.
 3.  **Regulation (Mitigasi Serangan)**: Agen mitigasi berbasis **Flask** & **python-iptables** yang dapat dikontrol dari jarak jauh. Agen ini dapat secara dinamis menerapkan atau mencabut aturan *firewall* (`iptables`) di VM Target untuk memblokir serangan.
 
 ## 🛠️ Tumpukan Teknologi (Tech Stack)
 
-  * **Backend & Skrip**: Python 3.11+
+  * **Backend & Skrip**: Python 3.11+, Bash
   * **API & Web Server**: Flask
-  * **Simulasi Serangan**: Scapy
+  * **Simulasi Serangan**: `hping3` (digunakan untuk performa serangan realistis)
   * **Monitoring Metrik**: `icmplib`, `iperf3`
   * **Mitigasi Firewall**: `python-iptables`
   * **Visualisasi Frontend**: Chart.js, HTML/CSS/JavaScript
@@ -102,7 +102,7 @@ cd MARUK/backend
 
 # Instal dependensi kompilasi & firewall
 sudo apt update
-sudo apt install build-essential python3-dev iperf3 iptables -y
+sudo apt install build-essential python3-dev iperf3 iptables iproute2 -y
 
 # Buat venv dan instal paket Python
 python3 -m venv venv
@@ -112,6 +112,18 @@ pip install Flask python-iptables
 # Jalankan iperf3 sebagai server
 # Saat ditanya "Start Iperf3 as a daemon automatically?", pilih <Yes>
 ```
+
+**PENTING untuk Demo**: Sebelum melakukan demo, jalankan script setup untuk menerapkan bandwidth limiting:
+
+```bash
+cd MARUK/backend
+sudo ./setup_demo.sh
+```
+
+Script ini akan:
+- Menerapkan bandwidth limit 10Mbit (WAJIB agar serangan terlihat dampaknya!)
+- Verifikasi iperf3 server berjalan
+- Cek status mitigation agent
 
 #### 2\. 📊 Di `MonitorVM` (Controller / Otak)
 
@@ -133,15 +145,59 @@ pip install Flask icmplib iperf3 requests
 
 #### 3\. 💣 Di `AttackerVM` (Penyerang / Tombak)
 
-Mesin ini hanya perlu `scapy`.
+Mesin ini perlu `hping3` untuk menjalankan serangan.
 
 ```bash
 cd MARUK/backend
 
-# Buat venv dan instal paket Python
-python3 -m venv venv
+# Instal hping3 - tool untuk serangan DDoS realistis
+sudo apt update
+sudo apt install hping3 -y
+```
+
+**Catatan**: `hping3` digunakan sebagai pengganti Scapy karena menghasilkan performa serangan yang jauh lebih realistis dan mampu benar-benar mempengaruhi metrik target VM.
+
+-----
+
+## ⚡ Quick Start (Untuk Presentasi)
+
+Jika Anda sudah setup semua VM dan ingin langsung demo, ikuti langkah cepat ini:
+
+### Di TargetVM:
+```bash
+cd MARUK/backend
+# Setup bandwidth limiting (WAJIB!)
+sudo ./setup_demo.sh
+
+# Jalankan mitigation agent
 source venv/bin/activate
-pip install scapy
+export XT_PATH=$(sudo find / -name xtables 2>/dev/null)
+sudo XTABLES_LIBDIR="$XT_PATH" venv/bin/python mitigation_agent.py
+```
+
+### Di MonitorVM:
+```bash
+cd MARUK/backend
+source venv/bin/activate
+python3 app.py
+# Buka dashboard di browser: http://<IP_MonitorVM>:5000
+```
+
+### Di AttackerVM:
+```bash
+cd MARUK/backend
+# Pilih salah satu serangan:
+sudo ./attack_tcp.sh 192.168.0.118        # Paling efektif! (TCP SYN ke port 5201)
+sudo ./attack_icmp.sh 192.168.0.118       # ICMP flood
+sudo ./attack_udp.sh 192.168.0.118        # UDP flood
+sudo ./attack_combined.sh 192.168.0.118   # Serangan kombinasi (paling dahsyat!)
+```
+
+### Setelah Demo:
+```bash
+# Di TargetVM:
+cd MARUK/backend
+sudo ./cleanup_demo.sh
 ```
 
 -----
@@ -208,27 +264,86 @@ Buka 3 terminal SSH terpisah dari Host Anda untuk menjalankan semua layanan.
 2.  Buka file `index.html` di browser Anda.
 3.  (Jika perlu) Edit `frontend/script.js` untuk memastikan URL API mengarah ke `http://<IP_MonitorVM>:5000`.
 
-### Langkah 5: Skenario Demo
+### Langkah 5: Setup Bandwidth Limiting di TargetVM (WAJIB!)
+
+**PENTING**: Bandwidth limiting diperlukan agar serangan benar-benar terlihat dampaknya!
+
+Di `TargetVM`, jalankan:
+
+```bash
+cd MARUK/backend
+sudo ./setup_demo.sh
+```
+
+Script ini akan menerapkan bandwidth limit 10Mbit pada interface jaringan. Tanpa ini, serangan tidak akan terlihat dampaknya pada metrik!
+
+### Langkah 6: Skenario Demo
 
 1.  **Lihat Dashboard**: Perhatikan metrik (Latency, Throughput) dalam keadaan normal.
+
 2.  **Mulai Serangan**:
       * Buka terminal SSH ke `AttackerVM`.
       * `cd MARUK/backend`
-      * `source venv/bin/activate`
-      * `sudo venv/bin/python test_attack.py` (Ganti IP target di dalam skrip jika perlu)
-3.  **Lihat Dampak**: Perhatikan *dashboard*. Latency akan melonjak dan Throughput akan anjlok. `tcpdump` akan dipenuhi paket.
+      * Pilih jenis serangan:
+      
+      ```bash
+      # TCP SYN Flood - PALING EFEKTIF! Target port 5201 (iperf3)
+      sudo ./attack_tcp.sh 192.168.0.118
+      
+      # Atau pilih serangan lain:
+      sudo ./attack_icmp.sh 192.168.0.118      # ICMP flood
+      sudo ./attack_udp.sh 192.168.0.118       # UDP flood
+      sudo ./attack_combined.sh 192.168.0.118  # Kombinasi (paling dahsyat!)
+      ```
+      
+      **Rekomendasi**: Gunakan `attack_tcp.sh` untuk demo karena paling efektif mempengaruhi throughput!
+
+3.  **Lihat Dampak**: Perhatikan *dashboard*. Latency akan melonjak dan Throughput akan anjlok drastis. Jika menjalankan `tcpdump`, akan terlihat dibanjiri paket serangan.
+
 4.  **Aktifkan Mitigasi**:
       * Klik tombol "Start Mitigation" di *dashboard* (atau jalankan `curl http://<IP_MonitorVM>:5000/api/mitigate/start`).
+
 5.  **Lihat Pemulihan**:
       * Metrik di *dashboard* akan kembali normal.
       * `tcpdump` akan menunjukkan paket *request* masih masuk, tetapi paket *reply* berhenti (tanda *firewall* `DROP` berhasil).
+
 6.  **Hentikan Mitigasi**:
       * Klik tombol "Stop Mitigation" (atau jalankan `curl http://<IP_MonitorVM>:5000/api/mitigate/stop`).
       * Metrik akan kembali kacau, membuktikan serangan masih berjalan.
 
+7.  **Hentikan Serangan**:
+      * Kembali ke terminal `AttackerVM` dan tekan `Ctrl+C` untuk menghentikan serangan.
+
+8.  **Cleanup (Setelah Demo Selesai)**:
+      * Di `TargetVM`, jalankan:
+      
+      ```bash
+      cd MARUK/backend
+      sudo ./cleanup_demo.sh
+      ```
+      
+      Script ini akan menghapus bandwidth limiting, membunuh proses hping3 yang tersisa, dan reset iptables.
+
 -----
 
 ## 🚨 Troubleshooting Umum
+
+  * **Serangan tidak mempengaruhi metrik / Dashboard tetap normal**:
+
+      * **PENYEBAB UTAMA**: Bandwidth limiting belum diterapkan di TargetVM!
+      * **SOLUSI**: Jalankan `sudo ./setup_demo.sh` di TargetVM sebelum demo.
+      * Bandwidth limiting WAJIB untuk membuat serangan terlihat dampaknya.
+      * Verifikasi dengan: `tc qdisc show dev enp0s3` (harus menunjukkan "tbf")
+
+  * **Script attack bash tidak dapat dijalankan**:
+
+      * Pastikan script sudah executable: `chmod +x attack_*.sh`
+      * Pastikan dijalankan dengan sudo: `sudo ./attack_tcp.sh`
+      * Pastikan hping3 terinstal: `sudo apt install hping3`
+
+  * **Error "hping3: command not found"**:
+
+      * Install hping3 di AttackerVM: `sudo apt update && sudo apt install hping3 -y`
 
   * **SSH `timeout` atau `connection refused`**:
 
@@ -247,3 +362,8 @@ Buka 3 terminal SSH terpisah dari Host Anda untuk menjalankan semua layanan.
   * **Error `XTABLES_LIBDIR`**:
 
       * Pastikan Anda menjalankan `mitigation_agent.py` menggunakan perintah `sudo XTABLES_LIBDIR="..." ...` seperti di atas.
+
+  * **Cleanup setelah demo**:
+
+      * Selalu jalankan `sudo ./cleanup_demo.sh` di TargetVM setelah demo untuk menghapus bandwidth limiting dan membersihkan proses hping3.
+      * Jika masih ada proses hping3 tersisa: `sudo killall -9 hping3`
