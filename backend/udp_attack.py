@@ -2,7 +2,7 @@ from scapy.all import IP, UDP, Raw, send, RandIP, RandShort
 import time
 
 # --- KONFIGURASI ---
-target_ip = "192.168.0.111"  # GANTI DENGAN IP TARGET ANDA
+target_ip = "192.168.0.118"  # GANTI DENGAN IP TARGET ANDA
 target_port = 5001           # Menyerang port iperf3 (biar makin kerasa)
 # -------------------
 
