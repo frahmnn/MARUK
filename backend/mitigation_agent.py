@@ -20,27 +20,31 @@ active_mitigations = {
 
 def get_chain():
     """Membuat atau mengambil chain kustom kita di tabel 'filter'."""
-    table = iptc.Table(iptc.Table.FILTER)
-
-    # Coba buat chain baru
     try:
-        table.create_chain(CHAIN_NAME)
-    except iptc.IPTCError:
-        # Chain sudah ada, tidak masalah
-        pass
+        table = iptc.Table(iptc.Table.FILTER)
 
-    chain = iptc.Chain(table, CHAIN_NAME)
+        # Coba buat chain baru
+        try:
+            table.create_chain(CHAIN_NAME)
+        except iptc.IPTCError:
+            # Chain sudah ada, tidak masalah
+            pass
 
-    # Pastikan chain kita terhubung ke INPUT
-    # Kita cek dulu agar tidak duplikat
-    input_chain = iptc.Chain(table, "INPUT")
-    rule = iptc.Rule()
-    rule.target = iptc.Target(rule, CHAIN_NAME)
+        chain = iptc.Chain(table, CHAIN_NAME)
 
-    if rule not in input_chain.rules:
-        input_chain.insert_rule(rule)
+        # Pastikan chain kita terhubung ke INPUT
+        # Kita cek dulu agar tidak duplikat
+        input_chain = iptc.Chain(table, "INPUT")
+        rule = iptc.Rule()
+        rule.target = iptc.Target(rule, CHAIN_NAME)
 
-    return chain
+        if rule not in input_chain.rules:
+            input_chain.insert_rule(rule)
+
+        return chain
+    except Exception as e:
+        logger.error(f"Error getting chain: {e}")
+        raise
 
 @app.route('/mitigate/start_icmp_block')
 def start_icmp_block():
@@ -61,6 +65,7 @@ def start_icmp_block():
         return jsonify({"status": "success", "message": "Aturan DROP ICMP ditambahkan."}), 200
     except Exception as e:
         logger.error(f"Error enabling ICMP block: {e}")
+        # Don't crash - return error response
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/mitigate/stop_icmp_block')
@@ -106,28 +111,37 @@ def unblock_icmp():
 
 @app.route('/mitigate/block_udp')
 def block_udp():
-    """Block UDP flood traffic with rate limiting."""
+    """Block UDP flood traffic with rate limiting using limit module."""
     try:
         chain = get_chain()
 
-        # Create rule: Rate limit UDP packets (max 100/sec)
+        # Create rule: Rate limit UDP packets using limit module (more compatible)
+        # This accepts up to 100/sec, drops the rest
         rule = iptc.Rule()
         rule.protocol = "udp"
         
-        # Use hashlimit module for rate limiting
-        match = rule.create_match("hashlimit")
-        match.hashlimit_above = "100/sec"
-        match.hashlimit_mode = "srcip,dstip"
-        match.hashlimit_name = "udp_flood"
+        # Use limit module (simpler and more compatible than hashlimit)
+        match = rule.create_match("limit")
+        match.limit = "100/sec"
+        match.limit_burst = "50"
         
-        rule.target = iptc.Target(rule, "DROP")
+        # Accept packets within the limit
+        rule.target = iptc.Target(rule, "ACCEPT")
         chain.insert_rule(rule)
+        
+        # Drop all other UDP packets that exceed the limit
+        drop_rule = iptc.Rule()
+        drop_rule.protocol = "udp"
+        drop_rule.target = iptc.Target(drop_rule, "DROP")
+        chain.insert_rule(drop_rule)
+        
         active_mitigations["udp"] = True
-        logger.info("UDP rate limiting enabled")
+        logger.info("UDP rate limiting enabled (limit module)")
 
         return jsonify({"status": "success", "message": "UDP rate limiting enabled (max 100/sec)."}), 200
     except Exception as e:
         logger.error(f"Error enabling UDP block: {e}")
+        # Don't crash - return error response
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/mitigate/unblock_udp')
@@ -209,67 +223,135 @@ def unblock_tcp_syn():
 def block_all():
     """Enable all three mitigations."""
     results = {}
+    overall_success = True
     
     # Block ICMP
     try:
-        result = block_icmp()
+        chain = get_chain()
+        rule = iptc.Rule()
+        rule.protocol = "icmp"
+        rule.target = iptc.Target(rule, "DROP")
+        chain.insert_rule(rule)
+        active_mitigations["icmp"] = True
         results["icmp"] = {"status": "success"}
+        logger.info("ICMP blocking enabled (block_all)")
     except Exception as e:
         results["icmp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error enabling ICMP in block_all: {e}")
     
     # Block UDP
     try:
-        result = block_udp()
+        chain = get_chain()
+        # Use limit module
+        rule = iptc.Rule()
+        rule.protocol = "udp"
+        match = rule.create_match("limit")
+        match.limit = "100/sec"
+        match.limit_burst = "50"
+        rule.target = iptc.Target(rule, "ACCEPT")
+        chain.insert_rule(rule)
+        
+        drop_rule = iptc.Rule()
+        drop_rule.protocol = "udp"
+        drop_rule.target = iptc.Target(drop_rule, "DROP")
+        chain.insert_rule(drop_rule)
+        
+        active_mitigations["udp"] = True
         results["udp"] = {"status": "success"}
+        logger.info("UDP rate limiting enabled (block_all)")
     except Exception as e:
         results["udp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error enabling UDP in block_all: {e}")
     
     # Block TCP SYN
     try:
-        result = block_tcp_syn()
+        chain = get_chain()
+        rule = iptc.Rule()
+        rule.protocol = "tcp"
+        match = rule.create_match("tcp")
+        match.dport = "5201"
+        match.syn = True
+        rule.target = iptc.Target(rule, "DROP")
+        chain.insert_rule(rule)
+        active_mitigations["tcp"] = True
         results["tcp"] = {"status": "success"}
+        logger.info("TCP SYN blocking enabled (block_all)")
     except Exception as e:
         results["tcp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error enabling TCP in block_all: {e}")
     
     logger.info(f"All mitigations enabled: {results}")
+    status_code = 200 if overall_success else 500
     return jsonify({
-        "status": "success",
-        "message": "All mitigations enabled",
+        "status": "success" if overall_success else "partial",
+        "message": "All mitigations enabled" if overall_success else "Some mitigations failed",
         "details": results
-    }), 200
+    }), status_code
 
 @app.route('/mitigate/unblock_all')
 def unblock_all():
     """Remove all mitigations."""
     results = {}
+    overall_success = True
     
     # Unblock ICMP
     try:
-        result = unblock_icmp()
+        chain = get_chain()
+        rule_deleted = False
+        for rule in chain.rules[:]:
+            if rule.protocol == "icmp" and rule.target.name == "DROP":
+                chain.delete_rule(rule)
+                rule_deleted = True
+        active_mitigations["icmp"] = False
         results["icmp"] = {"status": "success"}
+        logger.info("ICMP blocking disabled (unblock_all)")
     except Exception as e:
         results["icmp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error disabling ICMP in unblock_all: {e}")
     
     # Unblock UDP
     try:
-        result = unblock_udp()
+        chain = get_chain()
+        rule_deleted = False
+        for rule in chain.rules[:]:
+            if rule.protocol == "udp":
+                chain.delete_rule(rule)
+                rule_deleted = True
+        active_mitigations["udp"] = False
         results["udp"] = {"status": "success"}
+        logger.info("UDP rate limiting disabled (unblock_all)")
     except Exception as e:
         results["udp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error disabling UDP in unblock_all: {e}")
     
     # Unblock TCP SYN
     try:
-        result = unblock_tcp_syn()
+        chain = get_chain()
+        rule_deleted = False
+        for rule in chain.rules[:]:
+            if rule.protocol == "tcp" and rule.target.name == "DROP":
+                chain.delete_rule(rule)
+                rule_deleted = True
+        active_mitigations["tcp"] = False
         results["tcp"] = {"status": "success"}
+        logger.info("TCP SYN blocking disabled (unblock_all)")
     except Exception as e:
         results["tcp"] = {"status": "error", "message": str(e)}
+        overall_success = False
+        logger.error(f"Error disabling TCP in unblock_all: {e}")
     
     logger.info(f"All mitigations disabled: {results}")
+    status_code = 200 if overall_success else 500
     return jsonify({
-        "status": "success",
-        "message": "All mitigations removed",
+        "status": "success" if overall_success else "partial",
+        "message": "All mitigations removed" if overall_success else "Some mitigations failed to remove",
         "details": results
-    }), 200
+    }), status_code
 
 @app.route('/mitigate/status')
 def get_mitigation_status():
