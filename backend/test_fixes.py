@@ -147,7 +147,16 @@ def test_mitigation_error_handling():
             content = f.read()
         
         # Check for error handling patterns
-        has_try_except = content.count('try:') >= 8  # Should have many try-except blocks
+        # We expect at least 8 try-except blocks:
+        # 1. get_chain()
+        # 2. start_icmp_block()
+        # 3. stop_icmp_block()
+        # 4. block_udp()
+        # 5. unblock_udp()
+        # 6. block_tcp_syn()
+        # 7. unblock_tcp_syn()
+        # 8+ block_all(), unblock_all() and nested try-except blocks
+        has_try_except = content.count('try:') >= 8
         has_error_response = 'return jsonify({"status": "error"' in content
         has_status_500 = ', 500' in content
         

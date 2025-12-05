@@ -151,7 +151,8 @@ def unblock_udp():
         chain = get_chain()
         rule_deleted = False
 
-        # Remove all UDP rules (both ACCEPT with limit and DROP)
+        # Remove UDP rules created by this application (in our custom chain)
+        # This is safe because we only touch rules in MARUK_MITIGATION chain
         for rule in chain.rules[:]:
             if rule.protocol == "udp":
                 chain.delete_rule(rule)
