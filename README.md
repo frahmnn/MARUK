@@ -8,9 +8,47 @@ Proyek ini menjembatani kesenjangan antara teori keamanan jaringan dan keterampi
 
 ## 🚀 Fitur Utama
 
-1.  **Attack (Simulasi Serangan)**: Mesin serangan berbasis **hping3** yang mampu menghasilkan lalu lintas serangan DDoS (seperti ICMP/UDP/TCP Flood) dengan teknik IP Spoofing untuk mensimulasikan serangan terdistribusi realistis dengan performa tinggi.
-2.  **Monitor (Pemantauan Real-time)**: *Dashboard* terpusat berbasis **Flask** dan **Chart.js** yang memantau metrik kinerja jaringan (Latency, Throughput, Packet Loss) dari target secara *real-time*.
-3.  **Regulation (Mitigasi Serangan)**: Agen mitigasi berbasis **Flask** & **python-iptables** yang dapat dikontrol dari jarak jauh. Agen ini dapat secara dinamis menerapkan atau mencabut aturan *firewall* (`iptables`) di VM Target untuk memblokir serangan.
+1.  **Attack (Simulasi Serangan)**: 
+    - Mesin serangan berbasis **hping3** dengan teknik IP Spoofing
+    - **Attack Controller API** - Kontrol serangan ICMP/UDP/TCP dari dashboard web
+    - Serangan paralel (5 proses per jenis) untuk dampak realistis
+    - Support untuk serangan kombinasi (15 proses simultan)
+    
+2.  **Monitor (Pemantauan Real-time)**: 
+    - *Dashboard* modern dengan dark theme
+    - Monitoring 3 metrik: **Latency**, **Throughput**, **Packet Loss**
+    - Visualisasi real-time dengan Chart.js (60 data points)
+    - Indikator status warna (Hijau/Kuning/Merah)
+    - Toast notifications untuk setiap aksi
+    
+3.  **Regulation (Mitigasi Serangan)**: 
+    - Agen mitigasi berbasis **Flask** & **python-iptables**
+    - Kontrol mitigasi langsung dari dashboard
+    - Blocking spesifik per protokol (ICMP/UDP/TCP)
+    - UDP rate limiting (100 packets/sec)
+    - Aktivasi semua mitigasi dengan satu klik
+
+## 🎮 Dashboard Control System
+
+Dashboard baru menyediakan **kontrol penuh tanpa terminal**:
+
+### Panel Kontrol Serangan 💣
+- ✅ ICMP Flood - Start/Stop
+- ✅ UDP Flood - Start/Stop  
+- ✅ TCP SYN Flood - Start/Stop
+- ✅ Combined Attack - Start/Stop (semua serangan sekaligus)
+
+### Panel Kontrol Mitigasi 🛡️
+- ✅ Block ICMP - Enable/Disable
+- ✅ Block UDP - Enable/Disable (rate limiting)
+- ✅ Block TCP SYN - Enable/Disable
+- ✅ Block ALL - Enable/Disable (semua mitigasi sekaligus)
+
+### Monitoring Real-time 📊
+- **Kartu Metrik**: Nilai terkini dengan indikator warna
+- **Grafik Time-series**: Latency, Throughput, Packet Loss
+- **Status Bar**: Jumlah serangan & mitigasi aktif, status koneksi
+- **Auto-refresh**: Metrik setiap 2 detik, status setiap 3 detik
 
 ## 🛠️ Tumpukan Teknologi (Tech Stack)
 
@@ -145,17 +183,22 @@ pip install Flask icmplib iperf3 requests
 
 #### 3\. 💣 Di `AttackerVM` (Penyerang / Tombak)
 
-Mesin ini perlu `hping3` untuk menjalankan serangan.
+Mesin ini perlu `hping3` untuk menjalankan serangan dan menjalankan attack controller API.
 
 ```bash
 cd MARUK/backend
 
 # Instal hping3 - tool untuk serangan DDoS realistis
 sudo apt update
-sudo apt install hping3 -y
+sudo apt install hping3 python3 python3-pip -y
+
+# Instal Flask untuk attack controller
+pip3 install Flask
 ```
 
 **Catatan**: `hping3` digunakan sebagai pengganti Scapy karena menghasilkan performa serangan yang jauh lebih realistis dan mampu benar-benar mempengaruhi metrik target VM.
+
+**Attack Controller API**: AttackerVM juga menjalankan API kontrol serangan (`attack_controller.py`) yang memungkinkan Anda memulai/menghentikan serangan dari dashboard web tanpa perlu akses terminal.
 
 -----
 
@@ -163,7 +206,20 @@ sudo apt install hping3 -y
 
 Jika Anda sudah setup semua VM dan ingin langsung demo, ikuti langkah cepat ini:
 
-### Di TargetVM:
+### Langkah 1: Konfigurasi IP Address (Opsional)
+
+Jika IP VM Anda berbeda dari default, jalankan script konfigurasi:
+
+```bash
+cd MARUK/backend
+python3 configure_ips.py
+```
+
+Script ini akan meminta IP address untuk setiap VM dan otomatis mengupdate semua file konfigurasi.
+
+### Langkah 2: Jalankan Services
+
+#### Di TargetVM:
 ```bash
 cd MARUK/backend
 # Setup bandwidth limiting (WAJIB!)
@@ -175,15 +231,52 @@ export XT_PATH=$(sudo find / -name xtables 2>/dev/null)
 sudo XTABLES_LIBDIR="$XT_PATH" venv/bin/python mitigation_agent.py
 ```
 
-### Di MonitorVM:
+#### Di AttackerVM:
+```bash
+cd MARUK/backend
+# Jalankan attack controller API
+sudo python3 attack_controller.py
+```
+
+**PENTING**: Attack controller HARUS dijalankan dengan `sudo` karena hping3 memerlukan privilese root.
+
+#### Di MonitorVM:
 ```bash
 cd MARUK/backend
 source venv/bin/activate
 python3 app.py
-# Buka dashboard di browser: http://<IP_MonitorVM>:5000
 ```
 
-### Di AttackerVM:
+### Langkah 3: Akses Dashboard
+
+Buka browser dan akses: `http://<IP_MonitorVM>:5000`
+
+Dashboard baru memiliki fitur lengkap:
+- ✅ **3 Kartu Metrik Real-time**: Latency, Throughput, Packet Loss dengan indikator warna
+- ✅ **3 Grafik Chart.js**: Visualisasi real-time untuk setiap metrik
+- ✅ **Panel Kontrol Serangan**: Mulai/Stop ICMP, UDP, TCP, atau Combined attack
+- ✅ **Panel Kontrol Mitigasi**: Aktifkan/Nonaktifkan blocking untuk setiap jenis serangan
+- ✅ **Status Indicators**: Status real-time dari serangan dan mitigasi yang aktif
+- ✅ **Toast Notifications**: Notifikasi untuk setiap aksi yang dilakukan
+
+### Langkah 4: Skenario Demo dari Dashboard
+
+**Tidak perlu terminal lagi!** Semua kontrol tersedia dari dashboard:
+
+1. **Lihat metrik normal** - semua hijau dan stabil
+2. **Klik START pada ICMP Flood** - lihat latency melonjak
+3. **Klik ENABLE pada Block ICMP** - lihat latency recovery
+4. **Klik START pada TCP SYN Flood** - lihat throughput anjlok
+5. **Klik ENABLE pada Block TCP SYN** - lihat throughput recovery
+6. **Klik START pada Combined Attack** - lihat SEMUA metrik kacau
+7. **Klik ENABLE pada Block ALL** - lihat pemulihan total!
+
+📖 **Lihat DEMO_GUIDE.md untuk panduan demo lengkap dengan talking points!**
+
+### (Alternatif) Kontrol Manual via Terminal
+
+Jika Anda lebih suka kontrol manual, script bash masih tersedia:
+
 ```bash
 cd MARUK/backend
 # Pilih salah satu serangan:
