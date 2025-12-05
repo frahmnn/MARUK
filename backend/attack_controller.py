@@ -3,6 +3,7 @@ import subprocess
 import os
 import signal
 import logging
+import time
 
 app = Flask(__name__)
 
@@ -81,10 +82,8 @@ def stop_attack_processes(attack_type):
         pids = active_attacks.get(attack_type, [])
         
         if not pids:
-            return {
-                "status": "success",
-                "message": f"No active {attack_type.upper()} attack to stop"
-            }
+            # Even if no PIDs tracked, force kill any remaining hping3 processes
+            logger.info(f"No PIDs tracked for {attack_type}, performing cleanup anyway")
         
         stopped_count = 0
         for pid in pids:
@@ -97,11 +96,38 @@ def stop_attack_processes(attack_type):
             except Exception as e:
                 logger.error(f"Error stopping process {pid}: {e}")
         
+        # Force kill all hping3 processes using pkill (more reliable than killall)
+        # Use pkill -f to match full command line, -9 for force kill
+        try:
+            subprocess.run(['sudo', 'pkill', '-9', '-f', 'hping3'], 
+                         stderr=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL)
+            logger.info("Executed pkill -9 -f hping3 for cleanup")
+        except Exception as e:
+            logger.error(f"Error running pkill: {e}")
+        
+        # Wait for processes to die
+        time.sleep(1)
+        
+        # Verify processes are killed
+        try:
+            result = subprocess.run(['pgrep', '-f', 'hping3'], 
+                                  capture_output=True, 
+                                  text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                remaining_pids = result.stdout.strip().split('\n')
+                logger.warning(f"Some hping3 processes still running: {remaining_pids}")
+            else:
+                logger.info("All hping3 processes verified stopped")
+        except Exception as e:
+            logger.error(f"Error verifying process cleanup: {e}")
+        
+        # Clear tracking
         active_attacks[attack_type] = []
         
         return {
             "status": "success",
-            "message": f"Stopped {stopped_count} {attack_type.upper()} attack process(es)"
+            "message": f"Stopped {attack_type.upper()} attack (killed {stopped_count} tracked process(es) + cleanup)"
         }
     except Exception as e:
         logger.error(f"Error stopping {attack_type} attack: {e}")

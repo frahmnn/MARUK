@@ -459,4 +459,4 @@ Script ini akan menerapkan bandwidth limit 10Mbit pada interface jaringan. Tanpa
   * **Cleanup setelah demo**:
 
       * Selalu jalankan `sudo ./cleanup_demo.sh` di TargetVM setelah demo untuk menghapus bandwidth limiting dan membersihkan proses hping3.
-      * Jika masih ada proses hping3 tersisa: `sudo killall -9 hping3`
+      * Jika masih ada proses hping3 tersisa: `sudo pkill -9 hping3`

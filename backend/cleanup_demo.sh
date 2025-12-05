@@ -53,15 +53,15 @@ echo ""
 echo "[2/3] Membunuh proses hping3 yang masih berjalan..."
 if pgrep hping3 > /dev/null; then
     HPING_COUNT=$(pgrep hping3 | wc -l)
-    killall hping3 2>/dev/null
+    pkill hping3 2>/dev/null
     sleep 1
     
     # Verifikasi proses terbunuh
     if ! pgrep hping3 > /dev/null; then
         echo "✓ Semua proses hping3 dihentikan ($HPING_COUNT proses)"
     else
-        echo "⚠ Beberapa proses hping3 masih berjalan, mencoba kill -9..."
-        killall -9 hping3 2>/dev/null
+        echo "⚠ Beberapa proses hping3 masih berjalan, mencoba pkill -9..."
+        pkill -9 hping3 2>/dev/null
         sleep 1
         if ! pgrep hping3 > /dev/null; then
             echo "✓ Semua proses hping3 dihentikan (forced)"
