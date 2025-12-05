@@ -43,7 +43,7 @@ def get_chain():
     return chain
 
 @app.route('/mitigate/start_icmp_block')
-def start_mitigation():
+def start_icmp_block():
     """Memblokir semua lalu lintas ICMP (ping)."""
     try:
         chain = get_chain()
@@ -64,7 +64,7 @@ def start_mitigation():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/mitigate/stop_icmp_block')
-def stop_mitigation():
+def stop_icmp_block():
     """Menghapus aturan blokir ICMP."""
     try:
         chain = get_chain()
@@ -97,12 +97,12 @@ def stop_mitigation():
 @app.route('/mitigate/block_icmp')
 def block_icmp():
     """Block ICMP traffic (alias for start_icmp_block)."""
-    return start_mitigation()
+    return start_icmp_block()
 
 @app.route('/mitigate/unblock_icmp')
 def unblock_icmp():
     """Remove ICMP block (alias for stop_icmp_block)."""
-    return stop_mitigation()
+    return stop_icmp_block()
 
 @app.route('/mitigate/block_udp')
 def block_udp():

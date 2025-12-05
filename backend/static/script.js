@@ -356,7 +356,8 @@ async function controlMitigation(type, action) {
     button.disabled = true;
     
     try {
-        const endpoint = action === 'block' ? `${action}_${type}` : `un${action}_${type}`;
+        // Build endpoint: block_icmp, unblock_icmp, block_all, unblock_all, etc.
+        const endpoint = action === 'block' ? `block_${type}` : `unblock_${type}`;
         const response = await fetch(`/api/mitigate/${endpoint}`);
         const result = await response.json();
         
