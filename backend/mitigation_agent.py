@@ -283,4 +283,8 @@ def get_mitigation_status():
 if __name__ == '__main__':
     # Kita jalankan di port yang berbeda, misal 5001
     # HARUS dijalankan dengan sudo!
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    # Debug mode should be disabled in production for security
+    # Set FLASK_DEBUG=1 environment variable to enable debug mode in development
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=5001, debug=debug_mode)

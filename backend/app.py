@@ -294,4 +294,8 @@ def mitigate_status_proxy():
         return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Debug mode should be disabled in production for security
+    # Set FLASK_DEBUG=1 environment variable to enable debug mode in development
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
