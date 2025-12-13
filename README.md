@@ -36,13 +36,11 @@ Dashboard baru menyediakan **kontrol penuh tanpa terminal**:
 - ✅ ICMP Flood - Start/Stop
 - ✅ UDP Flood - Start/Stop  
 - ✅ TCP SYN Flood - Start/Stop
-- ✅ Combined Attack - Start/Stop (semua serangan sekaligus)
 
 ### Panel Kontrol Mitigasi 🛡️
 - ✅ Block ICMP - Enable/Disable
 - ✅ Block UDP - Enable/Disable (rate limiting)
 - ✅ Block TCP SYN - Enable/Disable
-- ✅ Block ALL - Enable/Disable (semua mitigasi sekaligus)
 
 ### Monitoring Real-time 📊
 - **Kartu Metrik**: Nilai terkini dengan indikator warna
@@ -283,7 +281,6 @@ cd MARUK/backend
 sudo ./attack_tcp.sh 192.168.18.20        # Paling efektif! (TCP SYN ke port 5201)
 sudo ./attack_icmp.sh 192.168.18.20       # ICMP flood
 sudo ./attack_udp.sh 192.168.18.20        # UDP flood
-sudo ./attack_combined.sh 192.168.18.20   # Serangan kombinasi (paling dahsyat!)
 ```
 
 ### Setelah Demo:
@@ -386,7 +383,6 @@ Script ini akan menerapkan bandwidth limit 10Mbit pada interface jaringan. Tanpa
       # Atau pilih serangan lain:
       sudo ./attack_icmp.sh 192.168.18.20      # ICMP flood
       sudo ./attack_udp.sh 192.168.18.20       # UDP flood
-      sudo ./attack_combined.sh 192.168.18.20  # Kombinasi (paling dahsyat!)
       ```
       
       **Rekomendasi**: Gunakan `attack_tcp.sh` untuk demo karena paling efektif mempengaruhi throughput!
