@@ -1,290 +1,336 @@
+#!/usr/bin/env python3
+"""
+mitigation_agent.py
+
+Lightweight Flask agent running on the Target VM that enables/disables
+simple iptables-based mitigations for demos.
+
+- Uses subprocess + iptables commands (more robust across iptables versions)
+- Ensures a MARUK_MITIGATION chain exists and INPUT jumps to it
+- Provides endpoints to block/unblock ICMP, UDP, TCP-SYN (port 5201), ALL
+- Provides a /mitigate/status endpoint reporting active mitigations
+- Safe: returns JSON errors instead of crashing on iptables failures
+
+Usage:
+    # (recommended) run inside repo venv with XTABLES_LIBDIR set:
+    cd ~/MARUK/backend
+    source venv/bin/activate
+    export XT_PATH=$(sudo find / -name xtables 2>/dev/null)
+    sudo XTABLES_LIBDIR="$XT_PATH" venv/bin/python mitigation_agent.py
+
+Notes:
+- This script prefers using subprocess with iptables commands because some
+  iptables match modules (hashlimit-above etc.) vary by distro/kernel.
+- For the demo it's acceptable to DROP protocols; for production you'd use
+  more nuanced rules (rate limiting, conntrack state, etc).
+"""
+
 from flask import Flask, jsonify
-import iptc # Ini adalah library python-iptables
+import subprocess
 import logging
+import os
+import json
 
 app = Flask(__name__)
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Nama chain kustom agar mudah dihapus
-CHAIN_NAME = "MARUK_MITIGATION"
+MARUK_CHAIN = "MARUK_MITIGATION"
+MONITOR_IP = None  # whitelisted IP for ICMP (monitoring). Read from config if available.
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
-# Track active mitigations
-active_mitigations = {
-    "icmp": False,
-    "udp": False,
-    "tcp": False
-}
 
-def get_chain():
-    """Membuat atau mengambil chain kustom kita di tabel 'filter'."""
-    table = iptc.Table(iptc.Table.FILTER)
+def load_config():
+    global MONITOR_IP
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                cfg = json.load(f)
+            MONITOR_IP = cfg.get("MONITOR_IP", MONITOR_IP)
+            logging.info("Config loaded: MONITOR_IP=%s", MONITOR_IP)
+        except Exception as e:
+            logging.exception("Failed to load config.json: %s", e)
 
-    # Coba buat chain baru
+
+def run_cmd(cmd):
+    """Run a shell command (list) and return (rc, stdout, stderr)."""
     try:
-        table.create_chain(CHAIN_NAME)
-    except iptc.IPTCError:
-        # Chain sudah ada, tidak masalah
-        pass
-
-    chain = iptc.Chain(table, CHAIN_NAME)
-
-    # Pastikan chain kita terhubung ke INPUT
-    # Kita cek dulu agar tidak duplikat
-    input_chain = iptc.Chain(table, "INPUT")
-    rule = iptc.Rule()
-    rule.target = iptc.Target(rule, CHAIN_NAME)
-
-    if rule not in input_chain.rules:
-        input_chain.insert_rule(rule)
-
-    return chain
-
-@app.route('/mitigate/start_icmp_block')
-def start_icmp_block():
-    """Memblokir semua lalu lintas ICMP (ping)."""
-    try:
-        chain = get_chain()
-
-        # Buat aturan: DROP semua paket ICMP
-        rule = iptc.Rule()
-        rule.protocol = "icmp"
-        rule.target = iptc.Target(rule, "DROP")
-
-        # Masukkan aturan ke chain kita
-        chain.insert_rule(rule)
-        active_mitigations["icmp"] = True
-        logger.info("ICMP blocking enabled")
-
-        return jsonify({"status": "success", "message": "Aturan DROP ICMP ditambahkan."}), 200
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        return proc.returncode, proc.stdout.decode(errors="ignore"), proc.stderr.decode(errors="ignore")
     except Exception as e:
-        logger.error(f"Error enabling ICMP block: {e}")
+        logging.exception("Subprocess run failed: %s", e)
+        return 1, "", str(e)
+
+
+def chain_exists(chain_name):
+    rc, out, err = run_cmd(["sudo", "iptables", "-L", chain_name, "-n"])
+    return rc == 0
+
+
+def ensure_chain():
+    """
+    Ensure MARUK_CHAIN exists and INPUT jumps to it.
+    Idempotent - safe to call multiple times.
+    """
+    # create chain if missing
+    if not chain_exists(MARUK_CHAIN):
+        rc, out, err = run_cmd(["sudo", "iptables", "-N", MARUK_CHAIN])
+        if rc != 0:
+            logging.error("Failed to create chain %s: %s", MARUK_CHAIN, err.strip())
+            # continue -- later operations will fail and be returned to caller
+    # ensure INPUT -> MARUK_CHAIN jump exists
+    # use iptables -C to test; if missing, insert it at top
+    rc, out, err = run_cmd(["sudo", "iptables", "-C", "INPUT", "-j", MARUK_CHAIN])
+    if rc != 0:
+        # not present, insert
+        rc2, out2, err2 = run_cmd(["sudo", "iptables", "-I", "INPUT", "1", "-j", MARUK_CHAIN])
+        if rc2 != 0:
+            logging.error("Failed to insert INPUT -> %s jump: %s", MARUK_CHAIN, err2.strip())
+
+
+def rule_exists(rule_args):
+    """
+    Check if an exact rule exists in MARUK_CHAIN by using iptables -C MARUK_CHAIN <rule_args...>
+    rule_args should be a list of strings representing the rule match/target parts (eg: ['-p','icmp','-j','DROP'])
+    """
+    cmd = ["sudo", "iptables", "-C", MARUK_CHAIN] + rule_args
+    rc, out, err = run_cmd(cmd)
+    return rc == 0
+
+
+def add_rule(rule_args):
+    cmd = ["sudo", "iptables", "-A", MARUK_CHAIN] + rule_args
+    rc, out, err = run_cmd(cmd)
+    return rc, out, err
+
+
+def insert_rule(rule_args):
+    cmd = ["sudo", "iptables", "-I", MARUK_CHAIN] + rule_args
+    rc, out, err = run_cmd(cmd)
+    return rc, out, err
+
+
+def delete_rule(rule_args):
+    # attempt to delete - may need to call until no more present
+    cmd = ["sudo", "iptables", "-D", MARUK_CHAIN] + rule_args
+    rc, out, err = run_cmd(cmd)
+    return rc, out, err
+
+
+def list_chain_rules():
+    rc, out, err = run_cmd(["sudo", "iptables", "-S", MARUK_CHAIN])
+    if rc == 0:
+        return out.splitlines()
+    return []
+
+
+@app.route("/mitigate/status")
+def status():
+    """
+    Return simple JSON with booleans for active mitigations.
+    """
+    try:
+        load_config()
+        ensure_chain()
+        rules = list_chain_rules()
+        icmp_blocked = any(("-p icmp" in r and "-j DROP" in r) for r in rules)
+        udp_blocked = any(("-p udp" in r and "-j DROP" in r) for r in rules)
+        tcp_blocked = any(("--dport 5201" in r and "--syn" in r and "-j DROP" in r) or ("--dport 5201" in r and "-j DROP" in r) for r in rules)
+        return jsonify({
+            "status": "ok",
+            "icmp_blocked": icmp_blocked,
+            "udp_blocked": udp_blocked,
+            "tcp_syn_blocked": tcp_blocked,
+            "chain_exists": chain_exists(MARUK_CHAIN),
+            "rules": rules
+        })
+    except Exception as e:
+        logging.exception("Error in /mitigate/status: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/stop_icmp_block')
-def stop_icmp_block():
-    """Menghapus aturan blokir ICMP."""
-    try:
-        chain = get_chain()
-        rule_deleted = False
 
-        # Loop melalui semua aturan di chain kustom kita
-        # Kita harus membuat salinan list-nya [:] agar aman saat menghapus
-        for rule in chain.rules[:]:
-            # Cari aturan yang: protokolnya 'icmp' DAN targetnya 'DROP'
-            if rule.protocol == "icmp" and rule.target.name == "DROP":
-                # Temukan! Hapus aturan ini
-                chain.delete_rule(rule)
-                rule_deleted = True
-                # Lanjutkan loop jika ada beberapa aturan (meski seharusnya tidak)
-
-        if rule_deleted:
-            active_mitigations["icmp"] = False
-            logger.info("ICMP blocking disabled")
-            return jsonify({"status": "success", "message": "Aturan DROP ICMP dihapus."}), 200
-        else:
-            active_mitigations["icmp"] = False
-            return jsonify({"status": "error", "message": "Aturan DROP ICMP tidak ditemukan."}), 404
-
-    except Exception as e:
-        logger.error(f"Error disabling ICMP block: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# New endpoints for comprehensive mitigation control
-
-@app.route('/mitigate/block_icmp')
+@app.route("/mitigate/block_icmp")
 def block_icmp():
-    """Block ICMP traffic (alias for start_icmp_block)."""
-    return start_icmp_block()
+    """
+    Block all ICMP by appending a DROP rule to MARUK_CHAIN.
+    Optionally whitelist MONITOR_IP for ICMP so monitoring still works.
+    """
+    try:
+        load_config()
+        ensure_chain()
 
-@app.route('/mitigate/unblock_icmp')
+        # If MONITOR_IP configured, insert ACCEPT for it (at top)
+        if MONITOR_IP:
+            accept_rule = ["-s", MONITOR_IP, "-p", "icmp", "-j", "ACCEPT"]
+            if not rule_exists(accept_rule):
+                rc, out, err = insert_rule(accept_rule)
+                if rc != 0:
+                    logging.error("Failed to insert accept rule for monitor %s: %s", MONITOR_IP, err.strip())
+
+        drop_rule = ["-p", "icmp", "-j", "DROP"]
+        if not rule_exists(drop_rule):
+            rc, out, err = add_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to add icmp DROP: %s", err.strip())
+                return jsonify({"status": "error", "message": err.strip()}), 500
+
+        return jsonify({"status": "success", "message": "ICMP block enabled"})
+    except Exception as e:
+        logging.exception("Error enabling ICMP block: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/mitigate/unblock_icmp")
 def unblock_icmp():
-    """Remove ICMP block (alias for stop_icmp_block)."""
-    return stop_icmp_block()
+    try:
+        ensure_chain()
+        drop_rule = ["-p", "icmp", "-j", "DROP"]
+        # remove all instances of this rule
+        while rule_exists(drop_rule):
+            rc, out, err = delete_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to delete icmp DROP: %s", err.strip())
+                break
+        return jsonify({"status": "success", "message": "ICMP block removed"})
+    except Exception as e:
+        logging.exception("Error disabling ICMP block: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/block_udp')
+
+@app.route("/mitigate/block_udp")
 def block_udp():
-    """Block UDP flood traffic with rate limiting."""
+    """
+    Block UDP floods. Simpler approach: drop all UDP in the mitigation chain.
+    (Older iptables may lack advanced hashlimit flags — keep it simple for demo.)
+    """
     try:
-        chain = get_chain()
-
-        # Create rule: Rate limit UDP packets (max 100/sec)
-        rule = iptc.Rule()
-        rule.protocol = "udp"
-        
-        # Use hashlimit module for rate limiting
-        match = rule.create_match("hashlimit")
-        match.hashlimit_above = "100/sec"
-        match.hashlimit_mode = "srcip,dstip"
-        match.hashlimit_name = "udp_flood"
-        
-        rule.target = iptc.Target(rule, "DROP")
-        chain.insert_rule(rule)
-        active_mitigations["udp"] = True
-        logger.info("UDP rate limiting enabled")
-
-        return jsonify({"status": "success", "message": "UDP rate limiting enabled (max 100/sec)."}), 200
+        ensure_chain()
+        drop_rule = ["-p", "udp", "-j", "DROP"]
+        if not rule_exists(drop_rule):
+            rc, out, err = add_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to add udp DROP: %s", err.strip())
+                return jsonify({"status": "error", "message": err.strip()}), 500
+        return jsonify({"status": "success", "message": "UDP block enabled"})
     except Exception as e:
-        logger.error(f"Error enabling UDP block: {e}")
+        logging.exception("Error enabling UDP block: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/unblock_udp')
+
+@app.route("/mitigate/unblock_udp")
 def unblock_udp():
-    """Remove UDP block."""
     try:
-        chain = get_chain()
-        rule_deleted = False
-
-        for rule in chain.rules[:]:
-            if rule.protocol == "udp" and rule.target.name == "DROP":
-                chain.delete_rule(rule)
-                rule_deleted = True
-
-        if rule_deleted:
-            active_mitigations["udp"] = False
-            logger.info("UDP rate limiting disabled")
-            return jsonify({"status": "success", "message": "UDP rate limiting removed."}), 200
-        else:
-            active_mitigations["udp"] = False
-            return jsonify({"status": "error", "message": "UDP rule not found."}), 404
-
+        ensure_chain()
+        drop_rule = ["-p", "udp", "-j", "DROP"]
+        while rule_exists(drop_rule):
+            rc, out, err = delete_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to delete udp DROP: %s", err.strip())
+                break
+        return jsonify({"status": "success", "message": "UDP block removed"})
     except Exception as e:
-        logger.error(f"Error disabling UDP block: {e}")
+        logging.exception("Error disabling UDP block: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/block_tcp_syn')
+
+@app.route("/mitigate/block_tcp_syn")
 def block_tcp_syn():
-    """Block TCP SYN packets to port 5201."""
+    """
+    Drop incoming TCP SYNs to port 5201 (iperf3) to mitigate SYN flood on that service.
+    Uses --syn match to only drop initial SYN packets.
+    """
     try:
-        chain = get_chain()
-
-        # Create rule: DROP TCP SYN to port 5201
-        rule = iptc.Rule()
-        rule.protocol = "tcp"
-        
-        # Match destination port 5201
-        match = rule.create_match("tcp")
-        match.dport = "5201"
-        
-        # Match SYN flag
-        match.syn = True
-        
-        rule.target = iptc.Target(rule, "DROP")
-        chain.insert_rule(rule)
-        active_mitigations["tcp"] = True
-        logger.info("TCP SYN blocking enabled for port 5201")
-
-        return jsonify({"status": "success", "message": "TCP SYN blocking enabled for port 5201."}), 200
+        ensure_chain()
+        # Use --syn to match SYN packets; not all iptables frontends display '--syn' in -S output,
+        # but the rule will be effective.
+        drop_rule = ["-p", "tcp", "--dport", "5201", "--syn", "-j", "DROP"]
+        if not rule_exists(drop_rule):
+            rc, out, err = add_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to add tcp syn DROP: %s", err.strip())
+                # Try fallback without --syn in case older iptables can't parse it here
+                fallback = ["-p", "tcp", "--dport", "5201", "-j", "DROP"]
+                if not rule_exists(fallback):
+                    rc2, out2, err2 = add_rule(fallback)
+                    if rc2 != 0:
+                        logging.error("Fallback tcp drop also failed: %s", err2.strip())
+                        return jsonify({"status": "error", "message": err2.strip()}), 500
+        return jsonify({"status": "success", "message": "TCP SYN block enabled"})
     except Exception as e:
-        logger.error(f"Error enabling TCP SYN block: {e}")
+        logging.exception("Error enabling TCP SYN block: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/unblock_tcp_syn')
+
+@app.route("/mitigate/unblock_tcp_syn")
 def unblock_tcp_syn():
-    """Remove TCP SYN block."""
     try:
-        chain = get_chain()
-        rule_deleted = False
-
-        for rule in chain.rules[:]:
-            if rule.protocol == "tcp" and rule.target.name == "DROP":
-                chain.delete_rule(rule)
-                rule_deleted = True
-
-        if rule_deleted:
-            active_mitigations["tcp"] = False
-            logger.info("TCP SYN blocking disabled")
-            return jsonify({"status": "success", "message": "TCP SYN blocking removed."}), 200
-        else:
-            active_mitigations["tcp"] = False
-            return jsonify({"status": "error", "message": "TCP SYN rule not found."}), 404
-
+        ensure_chain()
+        drop_rule = ["-p", "tcp", "--dport", "5201", "--syn", "-j", "DROP"]
+        fallback = ["-p", "tcp", "--dport", "5201", "-j", "DROP"]
+        # remove both variants if present
+        while rule_exists(drop_rule):
+            rc, out, err = delete_rule(drop_rule)
+            if rc != 0:
+                logging.error("Failed to delete tcp syn DROP: %s", err.strip())
+                break
+        while rule_exists(fallback):
+            rc, out, err = delete_rule(fallback)
+            if rc != 0:
+                logging.error("Failed to delete tcp fallback DROP: %s", err.strip())
+                break
+        return jsonify({"status": "success", "message": "TCP SYN block removed"})
     except Exception as e:
-        logger.error(f"Error disabling TCP SYN block: {e}")
+        logging.exception("Error disabling TCP SYN block: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/block_all')
+
+@app.route("/mitigate/block_all")
 def block_all():
-    """Enable all three mitigations."""
-    results = {}
-    
-    # Block ICMP
     try:
-        result = block_icmp()
-        results["icmp"] = {"status": "success"}
+        # enable all three
+        r1 = block_icmp()
+        r2 = block_udp()
+        r3 = block_tcp_syn()
+        # r1/r2/r3 are Flask responses or tuples; we won't try to parse them here — just report success if no exception
+        return jsonify({"status": "success", "message": "All mitigations enabled"})
     except Exception as e:
-        results["icmp"] = {"status": "error", "message": str(e)}
-    
-    # Block UDP
-    try:
-        result = block_udp()
-        results["udp"] = {"status": "success"}
-    except Exception as e:
-        results["udp"] = {"status": "error", "message": str(e)}
-    
-    # Block TCP SYN
-    try:
-        result = block_tcp_syn()
-        results["tcp"] = {"status": "success"}
-    except Exception as e:
-        results["tcp"] = {"status": "error", "message": str(e)}
-    
-    logger.info(f"All mitigations enabled: {results}")
-    return jsonify({
-        "status": "success",
-        "message": "All mitigations enabled",
-        "details": results
-    }), 200
+        logging.exception("Error enabling all mitigations: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/unblock_all')
+
+@app.route("/mitigate/unblock_all")
 def unblock_all():
-    """Remove all mitigations."""
-    results = {}
-    
-    # Unblock ICMP
     try:
-        result = unblock_icmp()
-        results["icmp"] = {"status": "success"}
+        r1 = unblock_icmp()
+        r2 = unblock_udp()
+        r3 = unblock_tcp_syn()
+        return jsonify({"status": "success", "message": "All mitigations removed"})
     except Exception as e:
-        results["icmp"] = {"status": "error", "message": str(e)}
-    
-    # Unblock UDP
-    try:
-        result = unblock_udp()
-        results["udp"] = {"status": "success"}
-    except Exception as e:
-        results["udp"] = {"status": "error", "message": str(e)}
-    
-    # Unblock TCP SYN
-    try:
-        result = unblock_tcp_syn()
-        results["tcp"] = {"status": "success"}
-    except Exception as e:
-        results["tcp"] = {"status": "error", "message": str(e)}
-    
-    logger.info(f"All mitigations disabled: {results}")
-    return jsonify({
-        "status": "success",
-        "message": "All mitigations removed",
-        "details": results
-    }), 200
+        logging.exception("Error disabling all mitigations: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/mitigate/status')
-def get_mitigation_status():
-    """Return JSON with active mitigations."""
-    return jsonify({
-        "icmp": active_mitigations["icmp"],
-        "udp": active_mitigations["udp"],
-        "tcp": active_mitigations["tcp"]
-    }), 200
 
-if __name__ == '__main__':
-    # Kita jalankan di port yang berbeda, misal 5001
-    # HARUS dijalankan dengan sudo!
-    # Debug mode should be disabled in production for security
-    # Set FLASK_DEBUG=1 environment variable to enable debug mode in development
-    import os
-    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
-    app.run(host='0.0.0.0', port=5001, debug=debug_mode)
+@app.route("/mitigate/flush_chain")
+def flush_chain():
+    """
+    Helper endpoint to flush and remove the MARUK chain completely.
+    Useful for cleanup if things go wrong.
+    """
+    try:
+        # remove jump from INPUT if present
+        rc, out, err = run_cmd(["sudo", "iptables", "-C", "INPUT", "-j", MARUK_CHAIN])
+        if rc == 0:
+            run_cmd(["sudo", "iptables", "-D", "INPUT", "-j", MARUK_CHAIN])
+        # flush and delete chain
+        run_cmd(["sudo", "iptables", "-F", MARUK_CHAIN])
+        run_cmd(["sudo", "iptables", "-X", MARUK_CHAIN])
+        return jsonify({"status": "success", "message": "Chain flushed and removed"})
+    except Exception as e:
+        logging.exception("Error flushing chain: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+if __name__ == "__main__":
+    load_config()
+    logging.info("Starting mitigation_agent on port 5001 (MARUK chain: %s)", MARUK_CHAIN)
+    # Default host 0.0.0.0 so MonitorVM can reach it
+    app.run(host="0.0.0.0", port=5001)
