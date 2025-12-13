@@ -65,8 +65,8 @@ GET /mitigate/status           - Get active mitigations
 
 **Configuration:**
 ```python
-TARGET_IP = "192.168.0.118"
-MITIGATION_AGENT_URL = "http://192.168.0.118:5001"
+TARGET_IP = "192.168.18.20"
+MITIGATION_AGENT_URL = "http://192.168.18.20:5001"
 ATTACK_CONTROLLER_URL = "http://192.168.0.119:5002"
 ```
 

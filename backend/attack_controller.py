@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # --- KONFIGURASI ---
 # Ganti dengan IP VM Target Anda
-TARGET_IP = "192.168.0.118"
+TARGET_IP = "192.168.18.20"
 # ---------------------
 
 # Global dictionary to track active attack processes

@@ -6,12 +6,12 @@
 # Penggunaan:
 #   sudo ./attack_tcp.sh [TARGET_IP] [TARGET_PORT]
 #   
-# Jika TARGET_IP tidak diberikan, default adalah 192.168.0.118
+# Jika TARGET_IP tidak diberikan, default adalah 192.168.18.20
 # Jika TARGET_PORT tidak diberikan, default adalah 5201 (iperf3 port)
 # Tekan Ctrl+C untuk berhenti
 
 # Default target IP dan port
-TARGET_IP="${1:-192.168.0.118}"
+TARGET_IP="${1:-192.168.18.20}"
 TARGET_PORT="${2:-5201}"
 
 echo "=========================================="

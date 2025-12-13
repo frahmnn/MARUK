@@ -280,10 +280,10 @@ Jika Anda lebih suka kontrol manual, script bash masih tersedia:
 ```bash
 cd MARUK/backend
 # Pilih salah satu serangan:
-sudo ./attack_tcp.sh 192.168.0.118        # Paling efektif! (TCP SYN ke port 5201)
-sudo ./attack_icmp.sh 192.168.0.118       # ICMP flood
-sudo ./attack_udp.sh 192.168.0.118        # UDP flood
-sudo ./attack_combined.sh 192.168.0.118   # Serangan kombinasi (paling dahsyat!)
+sudo ./attack_tcp.sh 192.168.18.20        # Paling efektif! (TCP SYN ke port 5201)
+sudo ./attack_icmp.sh 192.168.18.20       # ICMP flood
+sudo ./attack_udp.sh 192.168.18.20        # UDP flood
+sudo ./attack_combined.sh 192.168.18.20   # Serangan kombinasi (paling dahsyat!)
 ```
 
 ### Setelah Demo:
@@ -381,12 +381,12 @@ Script ini akan menerapkan bandwidth limit 10Mbit pada interface jaringan. Tanpa
       
       ```bash
       # TCP SYN Flood - PALING EFEKTIF! Target port 5201 (iperf3)
-      sudo ./attack_tcp.sh 192.168.0.118
+      sudo ./attack_tcp.sh 192.168.18.20
       
       # Atau pilih serangan lain:
-      sudo ./attack_icmp.sh 192.168.0.118      # ICMP flood
-      sudo ./attack_udp.sh 192.168.0.118       # UDP flood
-      sudo ./attack_combined.sh 192.168.0.118  # Kombinasi (paling dahsyat!)
+      sudo ./attack_icmp.sh 192.168.18.20      # ICMP flood
+      sudo ./attack_udp.sh 192.168.18.20       # UDP flood
+      sudo ./attack_combined.sh 192.168.18.20  # Kombinasi (paling dahsyat!)
       ```
       
       **Rekomendasi**: Gunakan `attack_tcp.sh` untuk demo karena paling efektif mempengaruhi throughput!

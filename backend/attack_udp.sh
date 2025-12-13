@@ -5,11 +5,11 @@
 # Penggunaan:
 #   sudo ./attack_udp.sh [TARGET_IP]
 #   
-# Jika TARGET_IP tidak diberikan, default adalah 192.168.0.118
+# Jika TARGET_IP tidak diberikan, default adalah 192.168.18.20
 # Tekan Ctrl+C untuk berhenti
 
 # Default target IP
-TARGET_IP="${1:-192.168.0.118}"
+TARGET_IP="${1:-192.168.18.20}"
 
 echo "=========================================="
 echo "   UDP FLOOD ATTACK"

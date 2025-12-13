@@ -7,7 +7,7 @@ This interactive script helps configure all IP addresses in the system.
 import re
 import sys
 
-def get_ip_input(prompt, default="192.168.0.118"):
+def get_ip_input(prompt, default="192.168.18.20"):
     """Get IP address input from user with validation."""
     while True:
         ip = input(f"{prompt} [{default}]: ").strip()
@@ -54,7 +54,7 @@ def main():
     # Get IP addresses from user
     print("🎯 Step 1: Enter VM IP Addresses")
     print("-" * 60)
-    target_ip = get_ip_input("Target VM IP (TargetVM)", "192.168.0.118")
+    target_ip = get_ip_input("Target VM IP (TargetVM)", "192.168.18.20")
     attacker_ip = get_ip_input("Attacker VM IP (AttackerVM)", "192.168.0.119")
     monitor_ip = get_ip_input("Monitor VM IP (MonitorVM)", "192.168.0.117")
     
@@ -79,22 +79,22 @@ def main():
     
     # Update app.py (MonitorVM)
     app_updates = {
-        'TARGET_IP = "192.168.0.118"': f'TARGET_IP = "{target_ip}"',
-        'MITIGATION_AGENT_URL = "http://192.168.0.118:5001"': f'MITIGATION_AGENT_URL = "http://{target_ip}:5001"',
+        'TARGET_IP = "192.168.18.20"': f'TARGET_IP = "{target_ip}"',
+        'MITIGATION_AGENT_URL = "http://192.168.18.20:5001"': f'MITIGATION_AGENT_URL = "http://{target_ip}:5001"',
         'ATTACK_CONTROLLER_URL = "http://192.168.0.119:5002"': f'ATTACK_CONTROLLER_URL = "http://{attacker_ip}:5002"'
     }
     success = update_file('app.py', app_updates) and success
     
     # Update attack_controller.py (AttackerVM)
     attack_updates = {
-        'TARGET_IP = "192.168.0.118"': f'TARGET_IP = "{target_ip}"'
+        'TARGET_IP = "192.168.18.20"': f'TARGET_IP = "{target_ip}"'
     }
     success = update_file('attack_controller.py', attack_updates) and success
     
     # Update attack scripts
     for script in ['attack_tcp.sh', 'attack_icmp.sh', 'attack_udp.sh', 'attack_combined.sh']:
         script_updates = {
-            'TARGET_IP="${1:-192.168.0.118}"': f'TARGET_IP="${{1:-{target_ip}}}"'
+            'TARGET_IP="${1:-192.168.18.20}"': f'TARGET_IP="${{1:-{target_ip}}}"'
         }
         success = update_file(script, script_updates) and success
     

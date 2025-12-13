@@ -8,11 +8,11 @@ app = Flask(__name__)
 
 # --- KONFIGURASI ---
 # Ganti dengan IP VM Target Anda
-TARGET_IP = "192.168.0.118"
+TARGET_IP = "192.168.18.20"
 # ---------------------
 
 # Ganti dengan URL agen mitigasi di VM Target
-MITIGATION_AGENT_URL = "http://192.168.0.118:5001"
+MITIGATION_AGENT_URL = "http://192.168.18.20:5001"
 # ---------------------
 
 # Ganti dengan URL attack controller di VM Attacker
