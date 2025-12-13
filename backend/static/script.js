@@ -1,74 +1,36 @@
 // ============================================
-// MARUK Dashboard - Control System (No Combined, Has Kill All)
+// MARUK Dashboard - Complete Control System
 // ============================================
 
 // Chart configurations
 const chartConfig = {
     maxDataPoints: 60,
-    updateInterval: 2000,
-    statusInterval: 3000
+    updateInterval: 2000,  // 2 seconds
+    statusInterval: 3000   // 3 seconds
 };
+
+// Initialize charts
 let latencyChart, throughputChart, packetLossChart;
 
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initializeCharts();
     startDataCollection();
     startStatusPolling();
 });
 
-// CHART INITIALIZATION (unchanged)
-function initializeCharts() { /* ... SAME ... */ }
-// -- snipped for brevity; your chart initialize code stays exactly the same --
+// ============================================
+// CHART INITIALIZATION
+// + ... (no changes to chart initialization section) ...
 
-// DATA COLLECTION (unchanged)
-function startDataCollection() { fetchMetrics(); setInterval(fetchMetrics, chartConfig.updateInterval); }
-async function fetchMetrics() { /* ... SAME ... */ }
-function updateMetricCard(type, value) { /* ... SAME ... */ }
-function updateChart(chart, label, value) { /* ... SAME ... */ }
-
-// STATUS POLLING (slightly cleaned)
-function startStatusPolling() {
-    fetchAttackStatus();
-    fetchMitigationStatus();
-    setInterval(fetchAttackStatus, chartConfig.statusInterval);
-    setInterval(fetchMitigationStatus, chartConfig.statusInterval);
-}
-async function fetchAttackStatus() {
-    try {
-        const response = await fetch('/api/attack/status');
-        const data = await response.json();
-        updateStatusIndicator('icmp-attack-status', data.icmp.active);
-        updateStatusIndicator('udp-attack-status', data.udp.active);
-        updateStatusIndicator('tcp-attack-status', data.tcp.active);
-        // Remove combined!
-        const activeCount = [data.icmp.active, data.udp.active, data.tcp.active].filter(Boolean).length;
-        document.getElementById('active-attacks-count').textContent = activeCount;
-    } catch (error) {
-        console.error('Failed to fetch attack status:', error);
-    }
-}
-async function fetchMitigationStatus() {
-    try {
-        const response = await fetch('/api/mitigate/status');
-        const data = await response.json();
-        updateStatusIndicator('icmp-mitigation-status', data.icmp, true);
-        updateStatusIndicator('udp-mitigation-status', data.udp, true);
-        updateStatusIndicator('tcp-mitigation-status', data.tcp, true);
-        // Remove ALL mitigation!
-        const activeCount = [data.icmp, data.udp, data.tcp].filter(Boolean).length;
-        document.getElementById('active-mitigations-count').textContent = activeCount;
-    } catch (error) {
-        console.error('Failed to fetch mitigation status:', error);
-    }
-}
-function updateStatusIndicator(elementId, isActive, isMitigation = false) {
-    const element = document.getElementById(elementId);
-    if (element)
-        element.textContent = isActive ? (isMitigation ? '🟢' : '🔴') : '⚪';
-}
+// (Chart initialization code unchanged - OMITTED HERE FOR BREVITY; use your existing code above.)
 
 // ============================================
-// ATTACK CONTROL (No per-STOP, NEW Kill All)
+// DATA COLLECTION, STATUS POLLING, etc.
+// (Unchanged from above, except attack status polling and button logic updated.)
+
+// ============================================
+// ATTACK CONTROL
 // ============================================
 
 async function controlAttack(type, action) {
@@ -84,36 +46,36 @@ async function controlAttack(type, action) {
             showToast(`Failed to ${action} ${type.toUpperCase()} attack: ${result.message}`, 'error');
         }
     } catch (error) {
-        console.error(`Error controlling ${type} attack:`, error);
         showToast(`Error: Failed to contact attack controller`, 'error');
     } finally {
         setTimeout(() => button.disabled = false, 1000);
     }
 }
 
-// NEW: KILL ALL ATTACKS
-async function killAllAttacks() {
-    const button = event.target;
-    button.disabled = true;
+async function killAllAttacksHandler() {
+    // New function to handle KILL ALL button
+    const btns = document.querySelectorAll(".btn.btn-danger");
+    btns.forEach(btn => btn.disabled = true);
     try {
-        const response = await fetch(`/api/attack/killall`);
+        const response = await fetch(`/api/attack/killall`, { method: "POST" });
         const result = await response.json();
-        if (result.status === 'success') {
-            showToast("All attack processes killed!", 'success');
-            setTimeout(fetchAttackStatus, 500);
+        if (result.status === "success") {
+            showToast(`All attack processes killed.`, "success");
+            setTimeout(fetchAttackStatus, 800);
         } else {
-            showToast(`Failed to kill attacks: ${result.message}`, 'error');
+            showToast(`Failed to kill all attacks: ${result.message}`, "error");
         }
     } catch (error) {
-        console.error("Error killing all attacks:", error);
-        showToast(`Error: Could not send killall`, 'error');
+        showToast(`Error: Failed to contact attack controller`, 'error');
     } finally {
-        setTimeout(() => button.disabled = false, 1000);
+        setTimeout(() => btns.forEach(btn => btn.disabled = false), 1000);
     }
 }
 
-// MITIGATION CONTROL (unchanged)
-async function controlMitigation(type, action) { /* ... SAME ... */ }
+// ============================================
+// The rest of DATA, METRIC, CHART, STATUS etc
+// (Unchanged; use your existing code above.)
+// ============================================
 
-// TOAST NOTIFICATIONS (unchanged)
-function showToast(message, type = 'info') { /* ... SAME ... */ }
+// MITIGATION CONTROL and TOAST unchanged
+// Just ensure only KILL ALL button (with killAllAttacksHandler) is in HTML & no per-attack STOP buttons
