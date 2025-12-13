@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from icmplib import ping
 import iperf3
 import time
@@ -16,7 +16,7 @@ MITIGATION_AGENT_URL = "http://192.168.18.20:5001"
 # ---------------------
 
 # Ganti dengan URL attack controller di VM Attacker
-ATTACK_CONTROLLER_URL = "http://192.168.0.119:5002"
+ATTACK_CONTROLLER_URL = "http://192.168.18.18:5002"
 # ---------------------
 
 def measure_latency_packet_loss():
@@ -83,30 +83,8 @@ def get_metrics():
 
     return jsonify(metrics)
 
-@app.route('/api/mitigate/start')
-def start_mitigation_proxy():
-    """Proxy untuk memulai mitigasi di VM Target."""
-    try:
-        # Memanggil API di mitigation_agent.py
-        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/start_icmp_block")
-        response.raise_for_status() # Akan error jika status code 4xx/5xx
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Gagal menghubungi agen mitigasi: {e}"}), 500
-
-@app.route('/api/mitigate/stop')
-def stop_mitigation_proxy():
-    """Proxy untuk menghentikan mitigasi di VM Target."""
-    try:
-        # Memanggil API di mitigation_agent.py
-        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/stop_icmp_block")
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Gagal menghubungi agen mitigasi: {e}"}), 500
-
 # ============================================
-# ATTACK CONTROL PROXY ENDPOINTS
+# ATTACK CONTROL PROXY ENDPOINTS (INDIVIDUAL)
 # ============================================
 
 @app.route('/api/attack/icmp/start')
@@ -114,16 +92,6 @@ def attack_icmp_start_proxy():
     """Proxy to start ICMP attack on AttackVM."""
     try:
         response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/icmp/start", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
-
-@app.route('/api/attack/icmp/stop')
-def attack_icmp_stop_proxy():
-    """Proxy to stop ICMP attack on AttackVM."""
-    try:
-        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/icmp/stop", timeout=5)
         response.raise_for_status()
         return jsonify(response.json()), response.status_code
     except requests.exceptions.RequestException as e:
@@ -139,16 +107,6 @@ def attack_udp_start_proxy():
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
 
-@app.route('/api/attack/udp/stop')
-def attack_udp_stop_proxy():
-    """Proxy to stop UDP attack on AttackVM."""
-    try:
-        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/udp/stop", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
-
 @app.route('/api/attack/tcp/start')
 def attack_tcp_start_proxy():
     """Proxy to start TCP SYN attack on AttackVM."""
@@ -159,31 +117,12 @@ def attack_tcp_start_proxy():
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
 
-@app.route('/api/attack/tcp/stop')
-def attack_tcp_stop_proxy():
-    """Proxy to stop TCP SYN attack on AttackVM."""
+# KILL ALL ATTACKS: This is the "STOP ALL" button/function!
+@app.route('/api/attack/killall', methods=['POST'])
+def attack_killall_proxy():
+    """Proxy to kill all attacks on AttackVM."""
     try:
-        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/tcp/stop", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
-
-@app.route('/api/attack/combined/start')
-def attack_combined_start_proxy():
-    """Proxy to start combined attack on AttackVM."""
-    try:
-        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/combined/start", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
-
-@app.route('/api/attack/combined/stop')
-def attack_combined_stop_proxy():
-    """Proxy to stop combined attack on AttackVM."""
-    try:
-        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/combined/stop", timeout=5)
+        response = requests.post(f"{ATTACK_CONTROLLER_URL}/attack/killall", timeout=5)
         response.raise_for_status()
         return jsonify(response.json()), response.status_code
     except requests.exceptions.RequestException as e:
@@ -263,26 +202,6 @@ def mitigate_unblock_tcp_proxy():
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
-@app.route('/api/mitigate/block_all')
-def mitigate_block_all_proxy():
-    """Proxy to enable all mitigations on TargetVM."""
-    try:
-        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/block_all", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
-
-@app.route('/api/mitigate/unblock_all')
-def mitigate_unblock_all_proxy():
-    """Proxy to disable all mitigations on TargetVM."""
-    try:
-        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/unblock_all", timeout=5)
-        response.raise_for_status()
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
-
 @app.route('/api/mitigate/status')
 def mitigate_status_proxy():
     """Proxy to get mitigation status from TargetVM."""
@@ -294,8 +213,5 @@ def mitigate_status_proxy():
         return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
 if __name__ == '__main__':
-    # Debug mode should be disabled in production for security
-    # Set FLASK_DEBUG=1 environment variable to enable debug mode in development
-    import os
-    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    debug_mode = True
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode, threaded=True)
