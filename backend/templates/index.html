@@ -2,91 +2,66 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>MARUK - DDoS Monitoring & Control Dashboard</title>
+  <title>MARUK - DDoS Monitoring & Control</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="styles.css" />
-  <style>
-    body{font-family:Inter,Arial;background:#0f1724;color:#e6eef8;margin:0;padding:16px}
-    .container{max-width:1100px;margin:0 auto}
-    header{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
-    h1{font-size:20px;margin:0}
-    .cards{display:flex;gap:12px;margin:12px 0}
-    .card{background:#0b1220;padding:12px;border-radius:8px;flex:1}
-    .panel{background:#071028;padding:12px;border-radius:8px;margin-top:12px}
-    .row{display:flex;align-items:center;gap:8px;margin:8px 0}
-    button{background:#1f6feb;border:none;color:white;padding:6px 10px;border-radius:6px;cursor:pointer}
-    button.danger{background:#e04848}
-    .small{font-size:12px;color:#9fb0d3}
-    #logs{white-space:pre-wrap;font-family:monospace;font-size:12px;margin-top:8px}
-  </style>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>🛡️ MARUK - DDoS Monitoring & Control Dashboard</h1>
-      <div class="small">Target: <span id="target-ip">loading...</span></div>
-    </header>
+  <header>
+    <h1>🛡️ MARUK - DDoS Monitoring & Control</h1>
+    <div id="target">Target: <span id="target-ip">192.168.18.20</span></div>
+    <div id="conn">Connection: <span id="conn-status">unknown</span></div>
+  </header>
 
-    <div class="cards">
+  <main>
+    <section class="metrics">
       <div class="card">
-        <div class="small">Latency (ms)</div>
-        <div id="latency" style="font-size:18px">--</div>
-      </div>
-      <div class="card">
-        <div class="small">Throughput (Mbps)</div>
-        <div id="throughput" style="font-size:18px">--</div>
+        <h3>Latency</h3>
+        <div id="latency">-- ms</div>
       </div>
       <div class="card">
-        <div class="small">Packet Loss (%)</div>
-        <div id="loss" style="font-size:18px">--</div>
+        <h3>Throughput</h3>
+        <div id="throughput">-- Mbps</div>
       </div>
-    </div>
+      <div class="card">
+        <h3>Packet Loss</h3>
+        <div id="pktloss">-- %</div>
+      </div>
+    </section>
 
-    <div class="panel" id="attack-control">
-      <h3>💣 Attack Control</h3>
-      <div class="row">
-        <span style="width:160px">ICMP Flood</span>
-        <button onclick="startAttack('icmp')">START</button>
-        <button onclick="stopAttack('icmp')">STOP</button>
+    <section class="controls">
+      <div class="panel">
+        <h2>💣 Attacks</h2>
+        <button id="start-icmp">Start ICMP Flood</button>
+        <button id="start-udp">Start UDP Flood</button>
+        <button id="start-tcp">Start TCP SYN Flood</button>
+        <button id="kill-all" class="danger">Kill All Attacks</button>
+        <div class="status">Active Attacks: <span id="active-attacks">0</span></div>
       </div>
-      <div class="row">
-        <span style="width:160px">UDP Flood</span>
-        <button onclick="startAttack('udp')">START</button>
-        <button onclick="stopAttack('udp')">STOP</button>
-      </div>
-      <div class="row">
-        <span style="width:160px">TCP SYN Flood</span>
-        <button onclick="startAttack('tcp')">START</button>
-        <button onclick="stopAttack('tcp')">STOP</button>
-      </div>
-      <div class="row">
-        <span style="width:160px">Emergency</span>
-        <button class="danger" onclick="killAllAttacks()">KILL ALL ATTACKS</button>
-      </div>
-    </div>
 
-    <div class="panel" id="mitigation-control">
-      <h3>🛡️ Mitigation Control</h3>
-      <div class="row"><span style="width:160px">Block ICMP</span>
-        <button onclick="mitigate('block_icmp')">ENABLE</button>
-        <button onclick="mitigate('unblock_icmp')">DISABLE</button>
+      <div class="panel">
+        <h2>🛡️ Mitigations</h2>
+        <div>
+          <button id="enable-icmp">Enable ICMP Block</button>
+          <button id="disable-icmp">Disable ICMP Block</button>
+        </div>
+        <div>
+          <button id="enable-udp">Enable UDP Block</button>
+          <button id="disable-udp">Disable UDP Block</button>
+        </div>
+        <div>
+          <button id="enable-tcp">Enable TCP SYN Block</button>
+          <button id="disable-tcp">Disable TCP SYN Block</button>
+        </div>
+        <div class="status">Active Mitigations: <span id="active-mitigations">0</span></div>
       </div>
-      <div class="row"><span style="width:160px">Block UDP</span>
-        <button onclick="mitigate('block_udp')">ENABLE</button>
-        <button onclick="mitigate('unblock_udp')">DISABLE</button>
-      </div>
-      <div class="row"><span style="width:160px">Block TCP SYN (5201)</span>
-        <button onclick="mitigate('block_tcp_syn')">ENABLE</button>
-        <button onclick="mitigate('unblock_tcp_syn')">DISABLE</button>
-      </div>
-      <div class="row"><span style="width:160px">Flush Chain</span>
-        <button onclick="mitigate('flush_chain')">FLUSH</button>
-      </div>
-    </div>
+    </section>
+  </main>
 
-    <div id="logs" class="panel small">Logs: <div id="logarea"></div></div>
-  </div>
+  <footer>
+    <small>MARUK - demo</small>
+  </footer>
 
-  <script src="script.js"></script>
+  <script src="/static/script.js"></script>
 </body>
 </html>
