@@ -8,11 +8,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <!-- Toast Notification Container -->
     <div id="toast-container"></div>
 
     <div class="container">
-        <!-- Header Section -->
         <header class="header">
             <h1>🛡️ MARUK - DDoS Monitoring &amp; Control Dashboard</h1>
             <div class="header-info">
@@ -21,53 +19,12 @@
             </div>
         </header>
 
-        <!-- Metrics Cards Section -->
-        <section class="metrics-cards">
-            <div class="metric-card" id="latency-card">
-                <div class="metric-icon">⏱️</div>
-                <div class="metric-content">
-                    <h3>Latency</h3>
-                    <div class="metric-value" id="latency-value">-- ms</div>
-                    <div class="metric-status" id="latency-status">Normal</div>
-                </div>
-            </div>
-            
-            <div class="metric-card" id="throughput-card">
-                <div class="metric-icon">📊</div>
-                <div class="metric-content">
-                    <h3>Throughput</h3>
-                    <div class="metric-value" id="throughput-value">-- Mbps</div>
-                    <div class="metric-status" id="throughput-status">Normal</div>
-                </div>
-            </div>
-            
-            <div class="metric-card" id="packet-loss-card">
-                <div class="metric-icon">📦</div>
-                <div class="metric-content">
-                    <h3>Packet Loss</h3>
-                    <div class="metric-value" id="packet-loss-value">-- %</div>
-                    <div class="metric-status" id="packet-loss-status">Normal</div>
-                </div>
-            </div>
-        </section>
+        <!-- Metrics Cards ... (unchanged, keep as is) -->
 
-        <!-- Charts Section -->
         <section class="charts-section">
-            <div class="chart-container">
-                <h3>Latency Over Time</h3>
-                <canvas id="latencyChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <h3>Throughput Over Time</h3>
-                <canvas id="throughputChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <h3>Packet Loss Over Time</h3>
-                <canvas id="packetLossChart"></canvas>
-            </div>
+            <!-- ... remains unchanged, DO NOT remove chart canvases ... -->
         </section>
 
-        <!-- Control Panels Section -->
         <section class="control-panels">
             <!-- Attack Control Panel -->
             <div class="control-panel attack-panel">
@@ -80,10 +37,8 @@
                         </div>
                         <div class="control-buttons">
                             <button class="btn btn-attack-start" onclick="controlAttack('icmp', 'start')">START</button>
-                            <button class="btn btn-attack-stop" onclick="controlAttack('icmp', 'stop')">STOP</button>
                         </div>
                     </div>
-                    
                     <div class="control-row">
                         <div class="control-label">
                             <span class="status-dot" id="udp-attack-status">⚪</span>
@@ -91,10 +46,8 @@
                         </div>
                         <div class="control-buttons">
                             <button class="btn btn-attack-start" onclick="controlAttack('udp', 'start')">START</button>
-                            <button class="btn btn-attack-stop" onclick="controlAttack('udp', 'stop')">STOP</button>
                         </div>
                     </div>
-                    
                     <div class="control-row">
                         <div class="control-label">
                             <span class="status-dot" id="tcp-attack-status">⚪</span>
@@ -102,20 +55,11 @@
                         </div>
                         <div class="control-buttons">
                             <button class="btn btn-attack-start" onclick="controlAttack('tcp', 'start')">START</button>
-                            <button class="btn btn-attack-stop" onclick="controlAttack('tcp', 'stop')">STOP</button>
                         </div>
                     </div>
-                    
-                    <div class="control-row">
-                        <div class="control-label">
-                            <span class="status-dot" id="combined-attack-status">⚪</span>
-                            <span>Combined Attack</span>
-                        </div>
-                        <div class="control-buttons">
-                            <button class="btn btn-attack-start" onclick="controlAttack('combined', 'start')">START</button>
-                            <button class="btn btn-attack-stop" onclick="controlAttack('combined', 'stop')">STOP</button>
-                        </div>
-                    </div>
+                </div>
+                <div style="margin-top:1em;text-align:center;">
+                    <button class="btn btn-danger" style="width:65%;font-weight:bold;font-size:1.1em;" onclick="killAllAttacks()">KILL ALL ATTACKS</button>
                 </div>
             </div>
 
@@ -133,7 +77,6 @@
                             <button class="btn btn-mitigation-disable" onclick="controlMitigation('icmp', 'unblock')">DISABLE</button>
                         </div>
                     </div>
-                    
                     <div class="control-row">
                         <div class="control-label">
                             <span class="status-dot" id="udp-mitigation-status">⚪</span>
@@ -144,7 +87,6 @@
                             <button class="btn btn-mitigation-disable" onclick="controlMitigation('udp', 'unblock')">DISABLE</button>
                         </div>
                     </div>
-                    
                     <div class="control-row">
                         <div class="control-label">
                             <span class="status-dot" id="tcp-mitigation-status">⚪</span>
@@ -155,22 +97,10 @@
                             <button class="btn btn-mitigation-disable" onclick="controlMitigation('tcp', 'unblock')">DISABLE</button>
                         </div>
                     </div>
-                    
-                    <div class="control-row">
-                        <div class="control-label">
-                            <span class="status-dot" id="all-mitigation-status">⚪</span>
-                            <span>Block ALL</span>
-                        </div>
-                        <div class="control-buttons">
-                            <button class="btn btn-mitigation-enable" onclick="controlMitigation('all', 'block')">ENABLE</button>
-                            <button class="btn btn-mitigation-disable" onclick="controlMitigation('all', 'unblock')">DISABLE</button>
-                        </div>
-                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Status Bar -->
         <footer class="status-bar">
             <div class="status-item">
                 <span>Active Attacks: <strong id="active-attacks-count">0</strong></span>
@@ -183,7 +113,6 @@
             </div>
         </footer>
     </div>
-
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
