@@ -1,187 +1,301 @@
-#!/usr/bin/env python3
-"""
-Monitor backend (app.py) - provides /api/metrics and proxies to attack/mitigation controllers.
-
-- Reads backend/config.json for endpoints and target IPs when present.
-- Non-blocking approach with timeouts for remote calls.
-- Uses subprocess ping and iperf3 (if available) with reasonable timeouts.
-- Serves the frontend (static files) if you host them here, otherwise frontend can be opened directly.
-"""
-from flask import Flask, jsonify, send_from_directory
-import subprocess
-import json
-import os
-import logging
+from flask import Flask, jsonify, render_template
+from icmplib import ping
+import iperf3
+import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-app = Flask(__name__, static_folder="../frontend", static_url_path="/")
-logging.basicConfig(level=logging.INFO)
+app = Flask(__name__)
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
-TARGET_IP = os.environ.get("TARGET_IP", "192.168.18.20")
-MITIGATION_AGENT_URL = os.environ.get("MITIGATION_AGENT_URL", "http://192.168.18.20:5001")
-ATTACK_CONTROLLER_URL = os.environ.get("ATTACK_CONTROLLER_URL", "http://192.168.18.21:5002")
+# --- KONFIGURASI ---
+# Ganti dengan IP VM Target Anda
+TARGET_IP = "192.168.18.20"
+# ---------------------
 
+# Ganti dengan URL agen mitigasi di VM Target
+MITIGATION_AGENT_URL = "http://192.168.18.20:5001"
+# ---------------------
 
-def load_config():
-    global TARGET_IP, MITIGATION_AGENT_URL, ATTACK_CONTROLLER_URL
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH) as f:
-                cfg = json.load(f)
-            TARGET_IP = cfg.get("TARGET_IP", TARGET_IP)
-            MITIGATION_AGENT_URL = cfg.get("MITIGATION_AGENT_URL", MITIGATION_AGENT_URL)
-            ATTACK_CONTROLLER_URL = cfg.get("ATTACK_CONTROLLER_URL", ATTACK_CONTROLLER_URL)
-            logging.info("Loaded config: TARGET=%s MITIG=%s ATTACK=%s", TARGET_IP, MITIGATION_AGENT_URL, ATTACK_CONTROLLER_URL)
-        except Exception as e:
-            logging.exception("Failed to load config.json: %s", e)
+# Ganti dengan URL attack controller di VM Attacker
+ATTACK_CONTROLLER_URL = "http://192.168.0.119:5002"
+# ---------------------
 
-
-def run_cmd(cmd, timeout=6):
+def measure_latency_packet_loss():
+    """Mengukur latency dan packet loss menggunakan ICMP (ping)."""
     try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
-        return proc.returncode, proc.stdout.decode(errors="ignore"), proc.stderr.decode(errors="ignore")
-    except subprocess.TimeoutExpired:
-        return 124, "", "timeout"
+        # Mengirim 4 paket ping, interval 0.2 detik, timeout 1 detik
+        host = ping(TARGET_IP, count=4, interval=0.2, timeout=1, privileged=False)
+
+        return {
+            "latency_avg_ms": host.avg_rtt,
+            "packet_loss_percent": host.packet_loss * 100 # Konversi 0.0-1.0 ke 0-100
+        }
     except Exception as e:
-        logging.exception("run_cmd failed: %s", e)
-        return 1, "", str(e)
+        # Jika target mati atau tidak terjangkau
+        print(f"Error ping: {e}")
+        return {
+            "latency_avg_ms": -1, # -1 menandakan error
+            "packet_loss_percent": 100
+        }
 
+def measure_throughput():
+    """Mengukur throughput (bandwidth) menggunakan iperf3."""
+    client = iperf3.Client()
+    client.server_hostname = TARGET_IP
+    client.port = 5201 # Port default iperf3
+    client.protocol = 'tcp'
+    client.duration = 2 # Tes selama 2 detik
 
-def measure_ping(target):
-    """
-    Use system ping to get packet loss and avg latency.
-    Returns (latency_ms_avg, packet_loss_percent)
-    """
-    rc, out, err = run_cmd(["ping", "-c", "3", "-w", "5", target], timeout=6)
-    if rc != 0 and out == "" and err == "timeout":
-        return None, None
     try:
-        # parse packet loss
-        loss = None
-        latency = None
-        for line in out.splitlines():
-            if "packet loss" in line:
-                parts = line.split(",")
-                loss = float(parts[2].strip().split("%")[0])
-            if "rtt min/avg/max/mdev" in line:
-                vals = line.split("=")[1].split()[0].split("/")
-                latency = float(vals[1])
-        return latency, loss
-    except Exception:
-        return None, None
+        result = client.run()
+        # Mengambil data throughput dalam Megabits per second (Mbps)
+        throughput_mbps = result.sent_Mbps
 
-
-def measure_iperf3(target):
-    """
-    Run iperf3 client briefly and return throughput in Mbps.
-    Returns throughput_mbps or None.
-    """
-    rc, out, err = run_cmd(["iperf3", "-c", target, "-p", "5201", "-t", "3", "-J"], timeout=8)
-    if rc == 124:
-        return None
-    try:
-        data = json.loads(out)
-        # prefer end.sum_received.bits_per_second if server mode; fallback to end.sum_sent
-        end = data.get("end", {})
-        sum_received = end.get("sum_received") or end.get("sum_sent") or {}
-        bps = sum_received.get("bits_per_second", 0)
-        mbps = round(bps / 1_000_000, 2)
-        return mbps
-    except Exception:
-        return None
-
-
-executor = ThreadPoolExecutor(max_workers=2)
-
-
-@app.route("/api/metrics")
-def api_metrics():
-    """
-    Return JSON: { latency_ms, throughput_mbps, packet_loss }
-    Non-blocking: uses ThreadPoolExecutor with timeouts.
-    """
-    load_config()
-    result = {"latency_ms": None, "throughput_mbps": None, "packet_loss": None}
-    try:
-        future_ping = executor.submit(measure_ping, TARGET_IP)
-        future_iperf = executor.submit(measure_iperf3, TARGET_IP)
-        try:
-            latency, loss = future_ping.result(timeout=6)
-            result["latency_ms"] = latency if latency is not None else -1
-            result["packet_loss"] = loss if loss is not None else -1
-        except TimeoutError:
-            result["latency_ms"] = -1
-            result["packet_loss"] = -1
-        try:
-            th = future_iperf.result(timeout=10)
-            result["throughput_mbps"] = th if th is not None else -1
-        except TimeoutError:
-            result["throughput_mbps"] = -1
-        return jsonify(result)
+        return {
+            "throughput_mbps": round(throughput_mbps, 2)
+        }
     except Exception as e:
-        logging.exception("Error in /api/metrics: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # Jika server iperf3 di target tidak berjalan
+        print(f"Error iperf3: {e}")
+        return {
+            "throughput_mbps": -1 # -1 menandakan error
+        }
 
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Proxy endpoints for attacks (forward to AttackVM)
-@app.route("/api/attack/<atype>/<action>")
-def proxy_attack(atype, action):
-    load_config()
-    if action not in ("start", "stop"):
-        return jsonify({"status": "error", "message": "invalid action"}), 400
-    try:
-        url = f"{ATTACK_CONTROLLER_URL}/attack/{atype}/{action}"
-        resp = requests.get(url, timeout=4)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+@app.route('/api/metrics')
+def get_metrics():
+    """Endpoint API untuk mengambil semua metrik."""
 
+    # 1. Ukur Latency & Packet Loss
+    ping_data = measure_latency_packet_loss()
 
-@app.route("/api/attack/kill_all")
-def proxy_attack_kill_all():
-    load_config()
-    try:
-        url = f"{ATTACK_CONTROLLER_URL}/attack/kill_all"
-        resp = requests.get(url, timeout=4)
-        return jsonify(resp.json()), resp.status_code
-    except requests.exceptions.RequestException as e:
-        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+    # 2. Ukur Throughput
+    iperf_data = measure_throughput()
 
-
-# Proxy endpoints for mitigation (forward to TargetVM)
-@app.route("/api/mitigate/<action>")
-def proxy_mitigate(action):
-    load_config()
-    mapping = {
-        "block_icmp": "/mitigate/block_icmp",
-        "unblock_icmp": "/mitigate/unblock_icmp",
-        "block_udp": "/mitigate/block_udp",
-        "unblock_udp": "/mitigate/unblock_udp",
-        "block_tcp_syn": "/mitigate/block_tcp_syn",
-        "unblock_tcp_syn": "/mitigate/unblock_tcp_syn",
-        "flush_chain": "/mitigate/flush_chain",
-        "status": "/mitigate/status"
+    # 3. Gabungkan hasilnya
+    metrics = {
+        "latency": ping_data["latency_avg_ms"],
+        "packet_loss": ping_data["packet_loss_percent"],
+        "throughput": iperf_data["throughput_mbps"]
     }
-    if action not in mapping:
-        return jsonify({"status": "error", "message": "invalid mitigation action"}), 400
+
+    return jsonify(metrics)
+
+@app.route('/api/mitigate/start')
+def start_mitigation_proxy():
+    """Proxy untuk memulai mitigasi di VM Target."""
     try:
-        url = MITIGATION_AGENT_URL + mapping[action]
-        resp = requests.get(url, timeout=4)
-        return jsonify(resp.json()), resp.status_code
+        # Memanggil API di mitigation_agent.py
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/start_icmp_block")
+        response.raise_for_status() # Akan error jika status code 4xx/5xx
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Gagal menghubungi agen mitigasi: {e}"}), 500
+
+@app.route('/api/mitigate/stop')
+def stop_mitigation_proxy():
+    """Proxy untuk menghentikan mitigasi di VM Target."""
+    try:
+        # Memanggil API di mitigation_agent.py
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/stop_icmp_block")
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Gagal menghubungi agen mitigasi: {e}"}), 500
+
+# ============================================
+# ATTACK CONTROL PROXY ENDPOINTS
+# ============================================
+
+@app.route('/api/attack/icmp/start')
+def attack_icmp_start_proxy():
+    """Proxy to start ICMP attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/icmp/start", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/icmp/stop')
+def attack_icmp_stop_proxy():
+    """Proxy to stop ICMP attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/icmp/stop", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/udp/start')
+def attack_udp_start_proxy():
+    """Proxy to start UDP attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/udp/start", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/udp/stop')
+def attack_udp_stop_proxy():
+    """Proxy to stop UDP attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/udp/stop", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/tcp/start')
+def attack_tcp_start_proxy():
+    """Proxy to start TCP SYN attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/tcp/start", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/tcp/stop')
+def attack_tcp_stop_proxy():
+    """Proxy to stop TCP SYN attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/tcp/stop", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/combined/start')
+def attack_combined_start_proxy():
+    """Proxy to start combined attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/combined/start", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/combined/stop')
+def attack_combined_stop_proxy():
+    """Proxy to stop combined attack on AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/combined/stop", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+@app.route('/api/attack/status')
+def attack_status_proxy():
+    """Proxy to get attack status from AttackVM."""
+    try:
+        response = requests.get(f"{ATTACK_CONTROLLER_URL}/attack/status", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact attack controller: {e}"}), 500
+
+# ============================================
+# ENHANCED MITIGATION PROXY ENDPOINTS
+# ============================================
+
+@app.route('/api/mitigate/block_icmp')
+def mitigate_block_icmp_proxy():
+    """Proxy to block ICMP on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/block_icmp", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
     except requests.exceptions.RequestException as e:
         return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
+@app.route('/api/mitigate/unblock_icmp')
+def mitigate_unblock_icmp_proxy():
+    """Proxy to unblock ICMP on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/unblock_icmp", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
-# Serve frontend static files (optional)
-@app.route("/")
-def index():
-    return app.send_static_file("index.html")
+@app.route('/api/mitigate/block_udp')
+def mitigate_block_udp_proxy():
+    """Proxy to block UDP on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/block_udp", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
+@app.route('/api/mitigate/unblock_udp')
+def mitigate_unblock_udp_proxy():
+    """Proxy to unblock UDP on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/unblock_udp", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
 
-if __name__ == "__main__":
-    load_config()
-    logging.info("Starting monitor app on port 5000")
-    # enable threaded mode so a slow probe doesn't block the server entirely
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+@app.route('/api/mitigate/block_tcp')
+def mitigate_block_tcp_proxy():
+    """Proxy to block TCP SYN on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/block_tcp_syn", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
+
+@app.route('/api/mitigate/unblock_tcp')
+def mitigate_unblock_tcp_proxy():
+    """Proxy to unblock TCP SYN on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/unblock_tcp_syn", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
+
+@app.route('/api/mitigate/block_all')
+def mitigate_block_all_proxy():
+    """Proxy to enable all mitigations on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/block_all", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
+
+@app.route('/api/mitigate/unblock_all')
+def mitigate_unblock_all_proxy():
+    """Proxy to disable all mitigations on TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/unblock_all", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
+
+@app.route('/api/mitigate/status')
+def mitigate_status_proxy():
+    """Proxy to get mitigation status from TargetVM."""
+    try:
+        response = requests.get(f"{MITIGATION_AGENT_URL}/mitigate/status", timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.RequestException as e:
+        return jsonify({"status": "error", "message": f"Failed to contact mitigation agent: {e}"}), 500
+
+if __name__ == '__main__':
+    # Debug mode should be disabled in production for security
+    # Set FLASK_DEBUG=1 environment variable to enable debug mode in development
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
